@@ -4,6 +4,8 @@
 #include <M5Unified.h>
 #include <esp_system.h>
 #include <esp_attr.h>
+#include <esp_debug_helpers.h>
+#include <rom/rtc.h>
 #include <Preferences.h>
 #include <WiFi.h>
 #include <ESPmDNS.h>
@@ -16,6 +18,7 @@
 
 AppStatus app;
 static uint32_t reboot_at = 0;
+RTC_NOINIT_ATTR static uint32_t rtc_our_reboot;  // set by app_request_reboot, read at next boot
 static uint32_t sta_started_ms = 0, last_sta_retry_ms = 0, ap_started_ms = 0;
 static bool mdns_up = false, ntp_started = false;
 static uint32_t last_flags = 0xFFFFFFFF;
@@ -55,7 +58,7 @@ String app_now_str() {
   return String(b);
 }
 
-void app_request_reboot(uint32_t delay_ms) { reboot_at = millis() + delay_ms; if (!reboot_at) reboot_at = 1; }
+void app_request_reboot(uint32_t delay_ms) { reboot_at = millis() + delay_ms; if (!reboot_at) reboot_at = 1; rtc_our_reboot = 1; }
 
 void app_factory_reset() {
   events.add("Factory reset");
@@ -378,6 +381,28 @@ RTC_NOINIT_ATTR static uint32_t rtc_magic;
 RTC_NOINIT_ATTR static uint32_t rtc_uptime_s;
 RTC_NOINIT_ATTR static uint32_t rtc_epoch;
 
+// esp_restart() runs registered shutdown handlers first; esp_restart_noos()
+// (panic, brownout, watchdog) does not. Recording who asked, from where, into
+// RTC memory tells an explicit restart from everything else.
+static constexpr uint32_t SD_MAGIC = 0x53445748;
+RTC_NOINIT_ATTR static uint32_t rtc_sd_tag;
+RTC_NOINIT_ATTR static uint32_t rtc_sd_uptime_s;
+RTC_NOINIT_ATTR static char rtc_sd_task[16];
+RTC_NOINIT_ATTR static uint32_t rtc_sd_bt[8];
+
+static void shutdown_hook() {
+  rtc_sd_tag = SD_MAGIC;
+  rtc_sd_uptime_s = (millis() - app.boot_ms) / 1000;
+  const char* tn = pcTaskGetName(NULL);
+  strlcpy(rtc_sd_task, tn ? tn : "?", sizeof rtc_sd_task);
+  esp_backtrace_frame_t f = {};
+  esp_backtrace_get_start(&f.pc, &f.sp, &f.next_pc);
+  for (int i = 0; i < 8; ++i) {
+    rtc_sd_bt[i] = f.pc;
+    if (!esp_backtrace_get_next_frame(&f)) { for (++i; i < 8; ++i) rtc_sd_bt[i] = 0; break; }
+  }
+}
+
 static void heartbeat_task() {
   static uint32_t last = 0;
   uint32_t now = millis();
@@ -405,6 +430,16 @@ static void boot_forensics() {
   Preferences p;
   if (p.begin("upsw", true)) { hb = p.getUInt("hb", 0); p.end(); }
   const char* why = app_reset_reason();
+  int raw0 = rtc_get_reset_reason(0), raw1 = rtc_get_reset_reason(1);
+  if (warm && rtc_sd_tag == SD_MAGIC) {
+    String bt;
+    for (int i = 0; i < 8 && rtc_sd_bt[i]; ++i) { char b[12]; snprintf(b, sizeof b, " %08lx", (unsigned long)rtc_sd_bt[i]); bt += b; }
+    events.add("Previous run ended by esp_restart() from task '%s' at uptime %s%s; backtrace%s", rtc_sd_task,
+               app_uptime_str(rtc_sd_uptime_s).c_str(), rtc_our_reboot ? " (requested by UPS Watcher)" : " (NOT requested by UPS Watcher)",
+               bt.c_str());
+  }
+  rtc_sd_tag = 0; rtc_our_reboot = 0;
+  events.add("Raw reset cause cpu0=%d cpu1=%d, rtc marker %s", raw0, raw1, warm ? "intact" : "lost");
   if (esp_reset_reason() == ESP_RST_POWERON) {
     if (warm) {
       app.boot_kind = "reset while powered (EN pin pulsed; the 3.3 V rail never dropped)";
@@ -444,6 +479,7 @@ void setup() {
 
   events.begin();
   boot_forensics();
+  esp_register_shutdown_handler(shutdown_hook);
   if (M5.Power.getType() == m5::Power_Class::pmic_ip5306) {
     // Keep the IP5306's boost converter running permanently ("boost output
     // normally open"). M5Unified leaves it off, so the chip hands over between

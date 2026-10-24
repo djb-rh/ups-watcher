@@ -432,29 +432,33 @@ static void boot_forensics() {
   const char* why = app_reset_reason();
   int raw0 = rtc_get_reset_reason(0), raw1 = rtc_get_reset_reason(1);
   if (warm && rtc_sd_tag == SD_MAGIC) {
+    events.add("Last run: esp_restart() by task '%s' at uptime %s, %s", rtc_sd_task,
+               app_uptime_str(rtc_sd_uptime_s).c_str(), rtc_our_reboot ? "asked by UPS Watcher" : "NOT asked by UPS Watcher");
     String bt;
-    for (int i = 0; i < 8 && rtc_sd_bt[i]; ++i) { char b[12]; snprintf(b, sizeof b, " %08lx", (unsigned long)rtc_sd_bt[i]); bt += b; }
-    events.add("Previous run ended by esp_restart() from task '%s' at uptime %s%s; backtrace%s", rtc_sd_task,
-               app_uptime_str(rtc_sd_uptime_s).c_str(), rtc_our_reboot ? " (requested by UPS Watcher)" : " (NOT requested by UPS Watcher)",
-               bt.c_str());
+    for (int i = 0; i < 6 && rtc_sd_bt[i]; ++i) { char b[12]; snprintf(b, sizeof b, " %08lx", (unsigned long)rtc_sd_bt[i]); bt += b; }
+    if (!rtc_our_reboot) events.add("Restart backtrace:%s", bt.c_str());
   }
-  rtc_sd_tag = 0; rtc_our_reboot = 0;
-  events.add("Raw reset cause cpu0=%d cpu1=%d, rtc marker %s", raw0, raw1, warm ? "intact" : "lost");
+  events.add("Raw reset cause cpu0=%d cpu1=%d, RTC memory %s", raw0, raw1, warm ? "intact" : "lost");
   if (esp_reset_reason() == ESP_RST_POWERON) {
     if (warm) {
-      app.boot_kind = "reset while powered (EN pin pulsed; the 3.3 V rail never dropped)";
-      events.add("Boot: UPS Watcher %s. Reset while powered - EN pin pulsed, 3.3 V never dropped. Previous uptime %s%s",
-                 UPSW_VERSION, app_uptime_str(prev_up).c_str(), prev_epoch ? (", last alive " + time_str(prev_epoch)).c_str() : "");
+      app.boot_kind = "EN pin reset while powered (3.3 V held)";
+      events.add("Boot %s: EN-pin reset, 3.3 V held; prev uptime %s%s", UPSW_VERSION, app_uptime_str(prev_up).c_str(),
+                 prev_epoch ? (", alive " + time_str(prev_epoch)).c_str() : "");
     } else {
       app.boot_kind = "cold start (power was lost)";
-      events.add("Boot: UPS Watcher %s. Cold start - power was lost%s", UPSW_VERSION,
-                 hb ? (", last heartbeat " + time_str(hb)).c_str() : "");
+      events.add("Boot %s: cold start, power was lost%s", UPSW_VERSION, hb ? ("; last heartbeat " + time_str(hb)).c_str() : "");
     }
+  } else if (esp_reset_reason() == ESP_RST_BROWNOUT || (esp_reset_reason() == ESP_RST_SW && warm && rtc_sd_tag != SD_MAGIC && !rtc_our_reboot)) {
+    // A software reset nobody asked for, with RTC memory intact, is the
+    // brownout interrupt (the Arduino core runs the detector in ISR mode and
+    // the reason hint does not always survive the sag).
+    app.boot_kind = "brownout (3.3 V sagged)";
+    events.add("Boot %s: brownout, supply sagged; prev uptime %s", UPSW_VERSION, app_uptime_str(prev_up).c_str());
   } else {
     app.boot_kind = why;
-    events.add("Boot: UPS Watcher %s, reset reason: %s%s", UPSW_VERSION, why,
-               warm && prev_up ? (", previous uptime " + app_uptime_str(prev_up)).c_str() : "");
+    events.add("Boot %s: %s%s", UPSW_VERSION, why, warm && prev_up ? ("; prev uptime " + app_uptime_str(prev_up)).c_str() : "");
   }
+  rtc_sd_tag = 0; rtc_our_reboot = 0;
 }
 
 // ------------------------------------------------------------- setup / loop

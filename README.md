@@ -101,6 +101,18 @@ something is wrong.
   screen, added to `ups.alarm`, and exported as `watcher.power` /
   `watcher.battery.charge` so a NUT client can tell "the UPS output died" from
   "the Watcher rebooted".
+* **The Core itself may reboot at the moment its 5 V input disappears.** The
+  IP5306 power chip hands over from charger to boost converter when VIN goes
+  away and its output sags for a few milliseconds; depending on the sag the
+  ESP32 either browns out (logged as a brownout) or loses power entirely
+  (logged as a cold start with the time of the last heartbeat). It then boots
+  within seconds on the battery and keeps serving. Software cannot cure the
+  sag; M5Unified already turns on "boost after VIN removed" and the Watcher
+  adds "boost always on". If you need the Core to ride through, a 470 to
+  1000 uF low-ESR capacitor across 5 V and GND on the M-Bus header does it.
+  Either way the event log tells the story: *Boot: cold start, power was lost;
+  last heartbeat ...* means the UPS output died (or someone pulled the cable),
+  *Last run ended by esp_restart()* names a software restart.
 * Events are kept in a ring buffer mirrored to flash, so the history survives a
   reboot: `/events` on the web UI, page 3 on the screen.
 

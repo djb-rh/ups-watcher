@@ -123,6 +123,7 @@ static const Desc kVarDesc[] = {
   {"output.frequency", "Output frequency (Hz)"}, {"output.current", "Output current (A)"},
   {"watcher.power", "UPS Watcher power source (external or battery)"},
   {"watcher.battery.charge", "UPS Watcher internal battery (percent)"},
+  {"watcher.battery.status", "UPS Watcher internal battery: charging, full, discharging"},
   {"watcher.uptime", "UPS Watcher uptime (seconds)"},
   {"watcher.ups.lastseen", "Seconds since the UPS last answered"},
 };

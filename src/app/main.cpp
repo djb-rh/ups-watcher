@@ -185,6 +185,8 @@ static void power_task() {
   uint8_t r1 = M5.In_I2C.readRegister8(0x75, 0x71, 400000);
   bool ext = (r0 & 0x08) || (r1 & 0x08);
   app.core_batt = M5.Power.getBatteryLevel();
+  app.core_full = r1 & 0x08;
+  app.core_charging = (r0 & 0x08) && !app.core_full;
   if (!app.ext_power_known) { app.ext_power_known = true; app.ext_power = ext; return; }
   if (ext != app.ext_power) {
     app.ext_power = ext;
@@ -259,6 +261,8 @@ static void ups_task() {
     last = millis();
     st.set("watcher.power", app.ext_power_known ? (app.ext_power ? "external" : "battery") : "unknown", ups::F_STRING);
     if (app.core_batt >= 0) st.set_int("watcher.battery.charge", app.core_batt);
+    st.set("watcher.battery.status", !app.ext_power_known ? "unknown" : !app.ext_power ? "discharging"
+                                     : app.core_full ? "full" : app.core_charging ? "charging" : "idle", ups::F_STRING);
     st.set_int("watcher.uptime", (millis() - app.boot_ms) / 1000);
     if (upsHid.last_ok_ms()) st.set_int("watcher.ups.lastseen", (millis() - upsHid.last_ok_ms()) / 1000);
     static bool last_ext = true;

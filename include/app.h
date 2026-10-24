@@ -12,7 +12,9 @@ struct AppStatus {
   String ap_ssid;
   bool ext_power = true;       // Core has 5 V in
   bool ext_power_known = false;
-  int core_batt = -1;          // IP5306 level, -1 unknown
+  int core_batt = -1;          // IP5306 level (0/25/50/75/100), -1 unknown
+  bool core_charging = false;  // IP5306 says current is going into the cell
+  bool core_full = false;      // IP5306 says the cell is full
   uint32_t ups_lost_ms = 0;    // millis() when the UPS vanished (0 = not lost)
   time_t ups_lost_time = 0;
   uint32_t power_lost_ms = 0;

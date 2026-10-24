@@ -15,7 +15,7 @@ class Display {
   void draw_overview(bool full);
   void draw_detail(bool full);
   void draw_events(bool full);
-  void draw_network(bool full);
+  void draw_watcher(bool full);
   void draw_header(bool full);
   void draw_footer(const char* a, const char* b, const char* c);
   int page_ = 0;

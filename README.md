@@ -63,7 +63,9 @@ by polling feature reports every *poll interval* seconds (default 5) instead.
    joins your network as `ups-watcher.local`.
 
 Buttons: **A** previous page, **B** backlight on/off, **C** next page. Pages:
-overview, details, event log, network. Holding **A + C** for 6 seconds forgets
+overview, UPS details, event log, and the **Watcher** page (its own power
+source and internal battery, Wi-Fi signal, IP, NUT clients, USB host, uptime,
+clock, version). Holding **A + C** for 6 seconds forgets
 the Wi-Fi settings and reopens the setup AP. Alarms (on battery, low battery,
 UPS lost, Watcher on its own battery) wake the screen.
 
@@ -93,7 +95,9 @@ something is wrong.
   `ups.alarm` to *Lost contact with UPS at HH:MM:SS*. In Settings you can choose
   NUT's default behaviour instead (`ERR DATA-STALE` on every read).
 * The Core keeps running on its internal battery for a while after its own 5 V
-  input dies. That transition is logged (*WATCHER LOST 5V INPUT*), shown on
+  input dies (make sure the battery switch on the Core's base, if yours has
+  one, is on; the Watcher page shows *0% - switch off?* when the IP5306 sees
+  no cell to charge). That transition is logged (*WATCHER LOST 5V INPUT*), shown on
   screen, added to `ups.alarm`, and exported as `watcher.power` /
   `watcher.battery.charge` so a NUT client can tell "the UPS output died" from
   "the Watcher rebooted".
@@ -101,12 +105,16 @@ something is wrong.
   reboot: `/events` on the web UI, page 3 on the screen.
 
 Extra variables beyond the NUT standard set: `watcher.power`,
-`watcher.battery.charge`, `watcher.uptime`, `watcher.ups.lastseen`,
+`watcher.battery.charge`, `watcher.battery.status` (charging / full /
+discharging), `watcher.uptime`, `watcher.ups.lastseen`,
 `input.transfer.reason` (APC's last transfer cause).
 
 ## Web UI
 
 * `/` live status, all NUT variables, recent events, beeper / self-test buttons
+* `/watcher` the device itself: 5 V input and internal battery (level, charging /
+  full), Wi-Fi (SSID, signal, channel, addresses, MAC), NUT server and connected
+  clients, USB host and UPS identity, chip / heap / flash / reset reason
 * `/hid` the raw and parsed HID report descriptor and every polled report
 * `/config` settings (Wi-Fi, NUT, display, time zone, simulator)
 * `/update` firmware upload

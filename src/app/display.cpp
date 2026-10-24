@@ -196,22 +196,86 @@ void Display::draw_events(bool full) {
   if (full) draw_footer("< Page", "Light", "Page >");
 }
 
-void Display::draw_network(bool full) {
+static String ago_str(uint32_t ms) {
+  if (!ms) return "never";
+  uint32_t s = (millis() - ms) / 1000;
+  if (s < 60) return String(s) + "s ago";
+  if (s < 3600) return String(s / 60) + "m " + String(s % 60) + "s ago";
+  return app_uptime_str(s) + " ago";
+}
+
+static String clock_str(time_t t) {
+  if (t < 1600000000) return "";
+  struct tm tmv; localtime_r(&t, &tmv);
+  char b[24]; strftime(b, sizeof b, "%H:%M:%S", &tmv);
+  return String(b);
+}
+
+// Page 4: the Watcher itself. Power / internal battery on top, then the
+// network, NUT server, USB host and system rows.
+void Display::draw_watcher(bool full) {
+  int y = HDR + 4;
+  String word; uint16_t col;
+  if (!app.ext_power_known) { word = "Power: unknown"; col = C_MUT; }
+  else if (!app.ext_power) { word = "ON INTERNAL BATTERY"; col = C_BAD; }
+  else { word = "5V input OK"; col = C_OK; }
+  field(6, y + 10, 196, word, &fonts::Font4, col, textdatum_t::middle_left);
+
+  String bt;
+  int chg = app.core_batt;
+  if (!app.ext_power_known || chg < 0) bt = "battery ?";
+  else if (app.core_full) bt = "battery full";
+  else if (app.core_charging) bt = "charging " + String(chg) + "%";
+  else if (!app.ext_power) bt = "battery " + String(chg) + "%";
+  else if (chg == 0) bt = "0% - switch off?";
+  else bt = "battery " + String(chg) + "%";
+  field(W - 6, y + 10, 112, bt, &fonts::Font2, app.ext_power ? C_MUT : C_WARN, textdatum_t::middle_right);
+
+  // battery bar (coarse: the IP5306 reports 0/25/50/75/100)
+  y += 24;
+  static int last_chg = -2;
+  static bool last_ext = false;
+  if (full || chg != last_chg || app.ext_power != last_ext) {
+    last_chg = chg; last_ext = app.ext_power;
+    int bw = W - 12;
+    M5.Display.drawRect(6, y, bw, 8, C_LINE);
+    int c = chg < 0 ? 0 : chg > 100 ? 100 : chg;
+    uint16_t bc = app.core_full ? C_OK : c > 50 ? C_OK : c > 25 ? C_WARN : C_BAD;
+    if (app.core_full) c = 100;
+    int fillw = (bw - 2) * c / 100;
+    M5.Display.fillRect(7, y + 1, fillw, 6, bc);
+    M5.Display.fillRect(7 + fillw, y + 1, bw - 2 - fillw, 6, C_BG);
+  }
+
+  y += 14;
+  String wifi;
+  if (app.sta_connected) {
+    int r = WiFi.RSSI();
+    const char* q = r > -60 ? "good" : r > -70 ? "ok" : r > -80 ? "weak" : "poor";
+    wifi = WiFi.SSID() + " " + String(r) + "dBm " + q + " ch" + String(WiFi.channel());
+  } else if (app.ap_mode) wifi = "AP " + app.ap_ssid + " (setup mode)";
+  else wifi = "connecting to " + settings.wifi_ssid;
+  String usb;
+  if (upsHid.connected()) usb = String(upsHid.product()[0] ? upsHid.product() : "UPS") + " CS G" + upsHid.cs_pin() + " INT G" + upsHid.int_pin();
+  else if (app.sim_active) usb = "simulated UPS";
+  else usb = "no device on CS G" + String(upsHid.cs_pin()) + " INT G" + upsHid.int_pin();
+  String seen = upsHid.connected() ? ago_str(upsHid.last_ok_ms()) + " (" + String(upsHid.poll_count()) + " polls)" : ago_str(upsHid.last_ok_ms());
+  String tm = app_now_str();
+  String ver = UPSW_VERSION;
+  if (app.power_lost_time > 1600000000) ver += "   5V lost " + clock_str(app.power_lost_time);
   String rows[][2] = {
-    {"Wi-Fi", app.sta_connected ? WiFi.SSID() + " " + String(WiFi.RSSI()) + "dBm" : (app.ap_mode ? "AP " + app.ap_ssid : "connecting")},
-    {"IP", app_ip()},
-    {"Host", settings.hostname + ".local"},
-    {"NUT", "port 3493, name '" + settings.ups_name + "'"},
-    {"Clients", String(nutServer.client_count()) + " (" + nutServer.login_count() + " logged in)"},
-    {"USB", upsHid.connected() ? "UPS on CS G" + String(upsHid.cs_pin()) + " INT G" + upsHid.int_pin() : "no device"},
-    {"Power", app.ext_power_known ? (app.ext_power ? "external 5V" : "BATTERY " + String(app.core_batt) + "%") : "unknown"},
-    {"Uptime", app_uptime_str((millis() - app.boot_ms) / 1000)},
-    {"Time", app_now_str()},
-    {"Version", UPSW_VERSION},
+    {"Wi-Fi", wifi},
+    {"IP", app_ip() + "  " + settings.hostname + ".local"},
+    {"NUT", "port 3493 '" + settings.ups_name + "'  " + String(nutServer.client_count()) + " clients, " + nutServer.login_count() + " logged in"},
+    {"USB", usb},
+    {"UPS seen", seen},
+    {"Uptime", app_uptime_str((millis() - app.boot_ms) / 1000) + "  " + String(ESP.getFreeHeap() / 1024) + " KB free"},
+    {"Time", tm},
+    {"Version", ver},
   };
   int n = sizeof rows / sizeof rows[0];
   for (int i = 0; i < n; ++i) {
-    int yy = HDR + 2 + i * 19;
+    int yy = y + i * 18;
     if (full) field(4, yy, 64, rows[i][0], &fonts::Font2, C_MUT);
     field(70, yy, W - 72, rows[i][1], &fonts::Font2, C_FG);
   }
@@ -240,7 +304,7 @@ void Display::task() {
     case 0: draw_overview(full); break;
     case 1: draw_detail(full); break;
     case 2: draw_events(full); break;
-    default: draw_network(full); break;
+    default: draw_watcher(full); break;
   }
   last_page_ = page_;
 }

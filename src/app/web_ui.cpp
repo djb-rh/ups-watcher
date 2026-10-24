@@ -4,6 +4,8 @@
 #include <DNSServer.h>
 #include <Update.h>
 #include <ArduinoJson.h>
+#include <LittleFS.h>
+#include <esp_system.h>
 #include "app.h"
 #include "web_pages.h"
 
@@ -45,6 +47,54 @@ static void handle_status() {
   w["ext_power"] = app.ext_power;
   w["ext_power_known"] = app.ext_power_known;
   w["core_batt"] = app.core_batt;
+  w["core_charging"] = app.core_charging;
+  w["core_full"] = app.core_full;
+  w["power_lost_at"] = app.power_lost_time > 1600000000 ? (long long)app.power_lost_time : 0;
+  w["power_lost_s"] = app.power_lost_ms ? (millis() - app.power_lost_ms) / 1000 : 0;
+  if (app.sta_connected) {
+    w["ssid"] = WiFi.SSID();
+    w["bssid"] = WiFi.BSSIDstr();
+    w["channel"] = WiFi.channel();
+    w["gateway"] = WiFi.gatewayIP().toString();
+    w["netmask"] = WiFi.subnetMask().toString();
+    w["dns"] = WiFi.dnsIP().toString();
+  } else if (!app.ap_mode) w["ssid"] = settings.wifi_ssid;
+  w["mac"] = WiFi.macAddress();
+  w["cs_pin"] = upsHid.cs_pin();
+  w["int_pin"] = upsHid.int_pin();
+  if (upsHid.connected()) {
+    char b[12];
+    snprintf(b, sizeof b, "%04x:%04x", upsHid.vid(), upsHid.pid()); w["usb_id"] = b;
+    w["usb_product"] = upsHid.product();
+    w["usb_mfr"] = upsHid.manufacturer();
+    w["usb_serial"] = upsHid.serial();
+    w["usb_desc_len"] = upsHid.desc_len();
+    w["usb_reports"] = upsHid.report_count();
+    w["usb_mounted_s"] = (millis() - upsHid.mounted_ms()) / 1000;
+    w["data_ok"] = upsHid.data_ok();
+  }
+  w["ups_seen_s"] = upsHid.last_ok_ms() ? (long)((millis() - upsHid.last_ok_ms()) / 1000) : -1;
+  w["ups_lost_at"] = app.ups_lost_time > 1600000000 ? (long long)app.ups_lost_time : 0;
+  w["poll_s"] = settings.poll_s;
+  w["nut_auth"] = !settings.nut_user.isEmpty();
+  JsonArray cl = w["nut_addrs"].to<JsonArray>();
+  for (auto& a : nutServer.client_addrs()) cl.add(a);
+  w["clock_set"] = time(nullptr) > 1600000000;
+  w["tz"] = settings.tz;
+  w["ntp"] = settings.ntp;
+  w["min_heap"] = ESP.getMinFreeHeap();
+  w["max_block"] = ESP.getMaxAllocHeap();
+  w["flash"] = ESP.getFlashChipSize();
+  w["chip"] = String(ESP.getChipModel()) + " rev" + ESP.getChipRevision() + " " + ESP.getCpuFreqMHz() + " MHz";
+  w["sdk"] = ESP.getSdkVersion();
+  w["build"] = __DATE__ " " __TIME__;
+  w["fs_used"] = LittleFS.usedBytes();
+  w["fs_total"] = LittleFS.totalBytes();
+  w["events_n"] = events.count();
+  static const char* reasons[] = {"unknown", "power on", "external reset", "software reset", "panic", "interrupt watchdog",
+                                  "task watchdog", "other watchdog", "deep sleep wake", "brownout", "SDIO"};
+  int rr = esp_reset_reason();
+  w["reset"] = rr >= 0 && rr < (int)(sizeof reasons / sizeof reasons[0]) ? reasons[rr] : "unknown";
   w["usb_connected"] = upsHid.connected();
   w["sim"] = app.sim_active;
   w["polls"] = upsHid.poll_count();
@@ -221,6 +271,7 @@ void WebUi::begin() {
   server.on("/config", HTTP_GET, []() { if (!auth_ok()) return; send_progmem("text/html", PAGE_CONFIG); });
   server.on("/update", HTTP_GET, []() { if (!auth_ok()) return; send_progmem("text/html", PAGE_UPDATE); });
   server.on("/hid", HTTP_GET, []() { send_progmem("text/html", PAGE_HID); });
+  server.on("/watcher", HTTP_GET, []() { send_progmem("text/html", PAGE_WATCHER); });
   server.on("/api/status", HTTP_GET, handle_status);
   server.on("/api/hid", HTTP_GET, handle_hid);
   server.on("/api/config", HTTP_GET, handle_config_get);

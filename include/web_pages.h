@@ -23,7 +23,7 @@ label{display:block;font-size:13px;color:var(--mut);margin:10px 0 4px}form .row{
 
 static const char PAGE_INDEX[] PROGMEM = R"HTML(<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>UPS Watcher</title><link rel="stylesheet" href="/style.css"></head><body>
-<header><h1>UPS Watcher</h1><nav><a class="on" href="/">Status</a><a href="/hid">HID</a><a href="/config">Settings</a><a href="/update">Update</a></nav></header>
+<header><h1>UPS Watcher</h1><nav><a class="on" href="/">Status</a><a href="/watcher">Watcher</a><a href="/hid">HID</a><a href="/config">Settings</a><a href="/update">Update</a></nav></header>
 <main>
 <div class="grid">
  <div class="card"><h2>UPS status</h2><div id="st" class="big">…</div><div id="model" class="small"></div><div id="alarm" class="small" style="color:var(--bad)"></div></div>
@@ -32,7 +32,7 @@ static const char PAGE_INDEX[] PROGMEM = R"HTML(<!doctype html><html><head><meta
  <div class="card"><h2>Input</h2><div class="big"><span id="vin">–</span> V</div><div class="small" id="xfer"></div></div>
 </div>
 <div class="grid" style="margin-top:14px">
- <div class="card"><h2>Watcher</h2><table><tr><td class="k">Power</td><td id="wpow"></td></tr><tr><td class="k">Network</td><td id="wnet"></td></tr><tr><td class="k">NUT</td><td id="wnut"></td></tr><tr><td class="k">USB</td><td id="wusb"></td></tr><tr><td class="k">Clock</td><td id="wclk"></td></tr><tr><td class="k">Uptime</td><td id="wup"></td></tr></table>
+ <div class="card"><h2>Watcher <a class="small" href="/watcher">details →</a></h2><table><tr><td class="k">Power</td><td id="wpow"></td></tr><tr><td class="k">Network</td><td id="wnet"></td></tr><tr><td class="k">NUT</td><td id="wnut"></td></tr><tr><td class="k">USB</td><td id="wusb"></td></tr><tr><td class="k">Clock</td><td id="wclk"></td></tr><tr><td class="k">Uptime</td><td id="wup"></td></tr></table>
   <div class="btns"><button class="sec" onclick="cmd('beeper.mute')">Mute beeper</button><button class="sec" onclick="cmd('beeper.enable')">Beeper on</button><button class="sec" onclick="cmd('beeper.disable')">Beeper off</button><button class="sec" onclick="cmd('test.battery.start.quick')">Quick self-test</button></div>
   <div class="small" id="cmdres"></div></div>
  <div class="card"><h2>Recent events</h2><div class="ev" id="events">…</div></div>
@@ -64,9 +64,65 @@ var t='';Object.keys(v).sort().forEach(function(k){t+='<tr><td class="k">'+k+'</
 tick();setInterval(tick,2000);
 </script></body></html>)HTML";
 
+static const char PAGE_WATCHER[] PROGMEM = R"HTML(<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>UPS Watcher · device status</title><link rel="stylesheet" href="/style.css"></head><body>
+<header><h1>UPS Watcher</h1><nav><a href="/">Status</a><a class="on" href="/watcher">Watcher</a><a href="/hid">HID</a><a href="/config">Settings</a><a href="/update">Update</a></nav></header>
+<main>
+<div class="grid">
+ <div class="card"><h2>Power</h2><div id="pw" class="big">…</div><div class="small" id="pwsub"></div><div class="small" id="pwlost" style="color:var(--warn)"></div></div>
+ <div class="card"><h2>Internal battery</h2><div class="big"><span id="bt">–</span></div><div class="bar"><i id="btbar" style="width:0"></i></div><div class="small" id="btsub"></div></div>
+ <div class="card"><h2>Wi-Fi</h2><div id="wf" class="big">…</div><div class="small" id="wfsub"></div></div>
+ <div class="card"><h2>UPS link</h2><div id="ul" class="big">…</div><div class="small" id="ulsub"></div></div>
+</div>
+<div class="grid" style="margin-top:14px">
+ <div class="card"><h2>Network</h2><table id="tnet"></table></div>
+ <div class="card"><h2>NUT server</h2><table id="tnut"></table></div>
+ <div class="card"><h2>USB host</h2><table id="tusb"></table></div>
+ <div class="card"><h2>System</h2><table id="tsys"></table></div>
+</div>
+<div class="card" style="margin-top:14px"><h2>Recent events</h2><div class="ev" id="events">…</div></div>
+</main>
+<script>
+function fmtUp(s){s=+s;var d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);return(d?d+'d ':'')+h+'h '+m+'m '+(s%60)+'s'}
+function ago(s){if(s<0||s==null)return'never';return s<60?s+' s ago':s<3600?Math.floor(s/60)+' m '+(s%60)+' s ago':fmtUp(s)+' ago'}
+function kb(b){return Math.round(b/1024)+' KB'}
+function at(t){return t?new Date(t*1000).toLocaleString():''}
+function rows(id,r){var t='';r.forEach(function(x){if(x[1]===undefined||x[1]==='')return;t+='<tr><td class="k">'+x[0]+'</td><td>'+x[1]+'</td></tr>'});document.getElementById(id).innerHTML=t}
+function badge(c,t){return'<span class="badge '+c+'">'+t+'</span>'}
+async function tick(){try{var d=await (await fetch('/api/status')).json();var w=d.watcher,v=d.vars||{};
+var pw=document.getElementById('pw');
+if(!w.ext_power_known)pw.innerHTML=badge('mut','unknown')+' no IP5306';
+else if(w.ext_power)pw.innerHTML=badge('ok','5 V input OK')+' from the UPS';
+else pw.innerHTML=badge('bad','ON INTERNAL BATTERY')+' 5 V input lost';
+document.getElementById('pwsub').textContent=w.ext_power_known?(w.ext_power?'The Core is powered over USB-C / M-Bus. If the UPS output dies this flips and the Watcher keeps reporting on its own cell.':'Running for '+fmtUp(w.power_lost_s)+' on the 110 mAh cell; expect a few minutes.'):'';
+document.getElementById('pwlost').textContent=w.power_lost_at?'Last 5 V loss: '+at(w.power_lost_at):'';
+var b=w.core_batt,bt=document.getElementById('bt'),state='';
+if(!w.ext_power_known||b<0){bt.textContent='?';}
+else{var txt=w.core_full?'Full':b+'%';state=w.core_full?'full':w.core_charging?'charging':w.ext_power?(b==0?'not charging: battery switch off or no cell?':'idle'):'discharging';bt.innerHTML=txt+' <span class="small">'+state+'</span>';}
+var pct=w.core_full?100:(b>0?b:0);var bar=document.getElementById('btbar');bar.style.width=pct+'%';bar.style.background=pct>50?'var(--ok)':pct>25?'var(--warn)':'var(--bad)';
+document.getElementById('btsub').textContent='IP5306 reports in 25 % steps. '+(w.ext_power_known?(w.core_charging?'Charging from the 5 V input.':w.core_full?'Charger finished.':''):'');
+var wf=document.getElementById('wf');
+if(w.ap_mode)wf.innerHTML=badge('warn','setup hotspot')+' '+w.ap_ssid;
+else if(w.ssid&&w.rssi)wf.innerHTML=badge(w.rssi>-67?'ok':w.rssi>-78?'warn':'bad',w.rssi+' dBm')+' '+w.ssid;
+else wf.innerHTML=badge('bad','not connected')+' '+(w.ssid||'');
+document.getElementById('wfsub').textContent=w.rssi?(w.rssi>-60?'excellent':w.rssi>-67?'good':w.rssi>-75?'fair':'weak')+' signal · channel '+w.channel+' · '+w.ip:(w.ip||'');
+var ul=document.getElementById('ul');
+if(w.usb_connected)ul.innerHTML=badge(w.data_ok?'ok':'warn',w.data_ok?'UPS connected':'reading')+' '+(w.usb_product||'');
+else if(w.sim)ul.innerHTML=badge('warn','simulated UPS');
+else ul.innerHTML=badge('bad','no UPS on USB')+(w.ups_lost_at?' lost '+at(w.ups_lost_at):'');
+document.getElementById('ulsub').textContent='last good read '+ago(w.ups_seen_s)+' · '+w.polls+' polls · every '+w.poll_s+' s';
+rows('tnet',[['Hostname',w.hostname+'.local'],['IP address',w.ip],['Gateway',w.gateway],['Netmask',w.netmask],['DNS',w.dns],['SSID',w.ssid],['BSSID',w.bssid],['Channel',w.channel],['Signal',w.rssi?w.rssi+' dBm':''],['MAC',w.mac],['Setup AP',w.ap_mode?w.ap_ssid+' (open), http://192.168.4.1':'off']]);
+rows('tnut',[['Address',(w.hostname+'.local:3493')],['UPS name',w.ups_name],['Auth',w.nut_auth?'user/password required for LOGIN, SET and INSTCMD':'none configured'],['Clients',w.nut_clients+' connected, '+w.nut_logins+' logged in'],['From',(w.nut_addrs||[]).join(', ')],['Data',d.stale?badge('bad','STALE'):badge('ok','fresh')+' '+Object.keys(v).length+' variables'],['ups.status',v['ups.status']||''],['mDNS','_nut._tcp, _http._tcp']]);
+rows('tusb',[['MAX3421E','CS G'+w.cs_pin+', INT G'+w.int_pin],['Device',w.usb_connected?w.usb_id+' '+(w.usb_mfr||'')+' '+(w.usb_product||''):'none'],['Serial',w.usb_serial],['Descriptor',w.usb_desc_len?w.usb_desc_len+' bytes, '+w.usb_reports+' reports polled':''],['Connected for',w.usb_connected?fmtUp(w.usb_mounted_s):''],['Feature polls',w.polls],['Input reports',w.inputs],['Simulator',w.sim?'ON':'off']]);
+rows('tsys',[['Firmware',w.version+' (built '+w.build+')'],['Chip',w.chip],['Flash',kb(w.flash)],['SDK',w.sdk],['Uptime',fmtUp(w.uptime)],['Last reset',w.reset],['Clock',w.clock_set?w.time:badge('warn','not set')+' NTP '+w.ntp],['Time zone',w.tz],['Heap',kb(w.heap)+' free, min '+kb(w.min_heap)+', largest block '+kb(w.max_block)],['Event log',w.events_n+' entries, '+kb(w.fs_used)+' of '+kb(w.fs_total)+' flash']]);
+document.getElementById('events').textContent=(d.events||[]).join('\n');
+}catch(e){document.getElementById('pw').textContent='offline?'}}
+tick();setInterval(tick,2000);
+</script></body></html>)HTML";
+
 static const char PAGE_CONFIG[] PROGMEM = R"HTML(<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>UPS Watcher settings</title><link rel="stylesheet" href="/style.css"></head><body>
-<header><h1>UPS Watcher</h1><nav><a href="/">Status</a><a href="/hid">HID</a><a class="on" href="/config">Settings</a><a href="/update">Update</a></nav></header>
+<header><h1>UPS Watcher</h1><nav><a href="/">Status</a><a href="/watcher">Watcher</a><a href="/hid">HID</a><a class="on" href="/config">Settings</a><a href="/update">Update</a></nav></header>
 <main><form method="post" action="/api/config" id="f">
 <div class="card"><h2>Wi-Fi</h2>
 <label>Network</label><input name="wifi_ssid" id="ssid" autocomplete="off">
@@ -99,7 +155,7 @@ load();
 
 static const char PAGE_UPDATE[] PROGMEM = R"HTML(<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>UPS Watcher update</title><link rel="stylesheet" href="/style.css"></head><body>
-<header><h1>UPS Watcher</h1><nav><a href="/">Status</a><a href="/hid">HID</a><a href="/config">Settings</a><a class="on" href="/update">Update</a></nav></header>
+<header><h1>UPS Watcher</h1><nav><a href="/">Status</a><a href="/watcher">Watcher</a><a href="/hid">HID</a><a href="/config">Settings</a><a class="on" href="/update">Update</a></nav></header>
 <main><div class="card"><h2>Firmware update</h2><p class="small">Upload <code>firmware.bin</code> built with <code>pio run -e app</code>. The device reboots when done.</p>
 <form method="post" action="/update" enctype="multipart/form-data"><input type="file" name="fw" accept=".bin"><div class="btns"><input type="submit" value="Flash"></div></form>
 <p class="small" id="ver"></p></div></main>
@@ -108,7 +164,7 @@ static const char PAGE_UPDATE[] PROGMEM = R"HTML(<!doctype html><html><head><met
 
 static const char PAGE_HID[] PROGMEM = R"HTML(<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>UPS Watcher HID</title><link rel="stylesheet" href="/style.css"></head><body>
-<header><h1>UPS Watcher</h1><nav><a href="/">Status</a><a class="on" href="/hid">HID</a><a href="/config">Settings</a><a href="/update">Update</a></nav></header>
+<header><h1>UPS Watcher</h1><nav><a href="/">Status</a><a href="/watcher">Watcher</a><a class="on" href="/hid">HID</a><a href="/config">Settings</a><a href="/update">Update</a></nav></header>
 <main><div class="card"><h2>Device</h2><div id="dev" class="small"></div></div>
 <div class="card" style="margin-top:14px"><h2>Feature reports being polled</h2><table id="reps"><tr><th>ID</th><th>Bytes</th><th>Raw</th><th>Age</th><th>Fails</th></tr></table></div>
 <div class="card" style="margin-top:14px"><h2>Parsed report descriptor</h2><table id="fields"><tr><th>RID</th><th>T</th><th>Off</th><th>Bits</th><th>Logical</th><th>Unit</th><th>Exp</th><th>Path</th></tr></table></div>

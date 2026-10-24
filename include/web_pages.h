@@ -69,8 +69,9 @@ static const char PAGE_CONFIG[] PROGMEM = R"HTML(<!doctype html><html><head><met
 <header><h1>UPS Watcher</h1><nav><a href="/">Status</a><a href="/hid">HID</a><a class="on" href="/config">Settings</a><a href="/update">Update</a></nav></header>
 <main><form method="post" action="/api/config" id="f">
 <div class="card"><h2>Wi-Fi</h2>
-<label>Network</label><input name="wifi_ssid" id="ssid" list="nets" autocomplete="off"><datalist id="nets"></datalist>
+<label>Network</label><input name="wifi_ssid" id="ssid" autocomplete="off">
 <div class="btns"><button type="button" class="sec" onclick="scan()">Scan</button><span class="small" id="scanres"></span></div>
+<div id="nets" class="btns"></div>
 <label>Password</label><input name="wifi_pass" type="password" placeholder="(unchanged)">
 <label>Hostname (mDNS name)</label><input name="hostname"></div>
 <div class="card" style="margin-top:14px"><h2>NUT server</h2>
@@ -90,7 +91,7 @@ static const char PAGE_CONFIG[] PROGMEM = R"HTML(<!doctype html><html><head><met
 </form></main>
 <script>
 async function load(){var d=await (await fetch('/api/config')).json();for(var k in d){var e=document.querySelector('[name='+k+']');if(e&&e.type!='password')e.value=d[k]}}
-async function scan(){document.getElementById('scanres').textContent='scanning…';var d=await (await fetch('/api/scan')).json();var l=document.getElementById('nets');l.innerHTML='';d.forEach(function(n){var o=document.createElement('option');o.value=n.ssid;o.label=n.rssi+' dBm';l.appendChild(o)});document.getElementById('scanres').textContent=d.length+' networks'}
+async function scan(){document.getElementById('scanres').textContent='scanning…';var d=await (await fetch('/api/scan')).json();var l=document.getElementById('nets');l.innerHTML='';var seen={};d.sort(function(a,b){return b.rssi-a.rssi}).forEach(function(n){if(!n.ssid||seen[n.ssid])return;seen[n.ssid]=1;var b=document.createElement('button');b.type='button';b.className='sec';b.textContent=n.ssid+' ('+n.rssi+' dBm'+(n.open?', open':'')+')';b.onclick=function(){document.getElementById('ssid').value=n.ssid};l.appendChild(b)});document.getElementById('scanres').textContent=d.length+' networks, tap one'}
 async function post(u){var r=await fetch(u,{method:'POST'});alert(r.ok?'OK':'failed')}
 async function sim(m){await fetch('/api/sim?mode='+m,{method:'POST'})}
 load();

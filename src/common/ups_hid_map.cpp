@@ -182,9 +182,14 @@ void hid_date_str(long v, char* out, size_t n) {
   snprintf(out, n, "%04ld/%02ld/%02ld", 1980 + ((v >> 9) & 0x7F), (v >> 5) & 0x0F, v & 0x1F);
 }
 void apc_date_str(long v, char* out, size_t n) {
-  // BCD 0xMMDDYY, e.g. 0x090322 -> 2022/09/03
+  // APC packs the date as BCD digits: 0xMMDDYY (raw bytes YY DD MM), the same
+  // way NUT's apc_date_conversion_fun reads it. 0 = not set.
   if (v <= 0) { snprintf(out, n, "not set"); return; }
-  snprintf(out, n, "20%02lX/%02lX/%02lX", v & 0xFF, (v >> 8) & 0xFF, (v >> 16) & 0xFF);
+  int year = (v & 0xF) + 10 * ((v >> 4) & 0xF);
+  int day = ((v >> 8) & 0xF) + 10 * ((v >> 12) & 0xF);
+  int month = ((v >> 16) & 0xF) + 10 * ((v >> 20) & 0xF);
+  year += year >= 70 ? 1900 : 2000;
+  snprintf(out, n, "%04d/%02d/%02d", year, month, day);
 }
 
 static void rtrim(char* s) {

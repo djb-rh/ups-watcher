@@ -6,6 +6,7 @@
 #include "hid_parser.h"
 #include "ups_state.h"
 #include "nut_protocol.h"
+#include "ups_hid_map.h"
 
 void setUp() {}
 void tearDown() {}
@@ -192,8 +193,27 @@ static void test_tokenize() {
   TEST_ASSERT_EQUAL_STRING("a \"quoted\" value", t[4].c_str());
 }
 
+static void test_map_helpers() {
+  char b[32];
+  upsmap::apc_date_str(0x092501, b, sizeof b);
+  TEST_ASSERT_EQUAL_STRING("2001/09/25", b);
+  upsmap::hid_date_str(21685, b, sizeof b);  // (42<<9)|(5<<5)|21 -> 2022/05/21
+  TEST_ASSERT_EQUAL_STRING("2022/05/21", b);
+  char model[64], fw[32], aux[32];
+  upsmap::split_apc_product("Back-UPS RS 700G FW:856.L8 -P.D USB FW:L8 -P ", model, sizeof model, fw, sizeof fw, aux, sizeof aux);
+  TEST_ASSERT_EQUAL_STRING("Back-UPS RS 700G", model);
+  TEST_ASSERT_EQUAL_STRING("856.L8 -P.D", fw);
+  TEST_ASSERT_EQUAL_STRING("L8 -P", aux);
+  char st[64];
+  upsmap::build_status(upsmap::S_HAVE_CHG_FLAGS | upsmap::S_ONLINE | upsmap::S_CHRG, 82, st, sizeof st);
+  TEST_ASSERT_EQUAL_STRING("OL CHRG", st);
+  upsmap::build_status(upsmap::S_HAVE_CHG_FLAGS | upsmap::S_DISCHRG | upsmap::S_LOWBATT, 5, st, sizeof st);
+  TEST_ASSERT_EQUAL_STRING("OB DISCHRG LB", st);
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
+  RUN_TEST(test_map_helpers);
   RUN_TEST(test_parse_fields);
   RUN_TEST(test_values_and_units);
   RUN_TEST(test_state);

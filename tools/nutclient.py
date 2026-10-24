@@ -2,7 +2,7 @@
 """Minimal NUT client for testing UPS Watcher (or any upsd).
 
   nutclient.py HOST                 # like `upsc ups@HOST`: LIST UPS + LIST VAR
-  nutclient.py HOST status          # just ups.status, once a second
+  nutclient.py HOST status [ups [seconds]]  # ups.status once a second, prints changes
   nutclient.py HOST raw "GET VAR ups battery.charge" ["LIST CMD ups" ...]
   nutclient.py HOST login USER PASS # USERNAME/PASSWORD/LOGIN/LOGOUT handshake
 
@@ -48,7 +48,13 @@ def main():
         print("\n".join(cmd(sock, rd, f"LIST CMD {name}")))
     elif mode == "status":
         name = sys.argv[3] if len(sys.argv) > 3 else "ups"
-        while True:
+        until = time.time() + (float(sys.argv[4]) if len(sys.argv) > 4 else 1e12)
+        last = None
+        while time.time() < until:
+            st = " ".join(cmd(sock, rd, f"GET VAR {name} ups.status"))
+            if st != last:
+                last = st
+                print(time.strftime("%H:%M:%S"), "CHANGE ->", st, flush=True)
             print(time.strftime("%H:%M:%S"), " ".join(cmd(sock, rd, f"GET VAR {name} ups.status")),
                   " ".join(cmd(sock, rd, f"GET VAR {name} battery.charge")), flush=True)
             time.sleep(1)

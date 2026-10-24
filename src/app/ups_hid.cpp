@@ -81,50 +81,43 @@ const hid::Field* UpsHid::find_feature_by_path(const char* path) {
 
 void UpsHid::bind_fields() {
   n_vbinds_ = n_sbinds_ = n_reports_ = 0;
-  char p[160];
-  // Pass over every field once, matching paths against the maps.
-  for (int i = 0; i < desc_.size(); ++i) {
-    const hid::Field& f = desc_[i];
-    if (f.type == hid::R_OUTPUT) continue;
-    desc_.format_path(f, p, sizeof p);
-    for (int m = 0; m < upsmap::kVarMapCount; ++m) {
-      if (strcmp(p, upsmap::kVarMap[m].path) != 0) continue;
-      const char* var = upsmap::kVarMap[m].var;
-      // already bound to a higher-priority path?
-      VarBind* b = nullptr;
-      for (int k = 0; k < n_vbinds_; ++k) if (strcmp(vbinds_[k].e->var, var) == 0) { b = &vbinds_[k]; break; }
-      if (b && b->e != &upsmap::kVarMap[m]) {
-        // a different (earlier) path already owns this var; only allow the
-        // input twin of the same path
-        break;
-      }
-      if (!b) {
-        if (n_vbinds_ >= (int)(sizeof vbinds_ / sizeof vbinds_[0])) break;
-        b = &vbinds_[n_vbinds_++];
-        b->e = &upsmap::kVarMap[m]; b->ffield = b->ifield = -1; b->last_raw = 0; b->string_done = false;
-      }
-      if (f.type == hid::R_FEATURE && b->ffield < 0) b->ffield = i;
-      if (f.type == hid::R_INPUT && b->ifield < 0) b->ifield = i;
-      break;
-    }
-    for (int m = 0; m < upsmap::kStatusMapCount; ++m) {
-      if (strcmp(p, upsmap::kStatusMap[m].path) != 0) continue;
-      StatBind* b = nullptr;
-      for (int k = 0; k < n_sbinds_; ++k) if (sbinds_[k].flag == upsmap::kStatusMap[m].flag) { b = &sbinds_[k]; break; }
-      if (!b) {
-        if (n_sbinds_ >= (int)(sizeof sbinds_ / sizeof sbinds_[0])) break;
-        b = &sbinds_[n_sbinds_++];
-        b->flag = upsmap::kStatusMap[m].flag; b->inv = upsmap::kStatusMap[m].inverted; b->ffield = b->ifield = -1;
-      } else {
-        // keep the first (PresentStatus) path, unless this is its input twin
-        const hid::Field& have = desc_[b->ffield >= 0 ? b->ffield : b->ifield];
-        if (have.report_id != f.report_id || have.bit_offset != f.bit_offset) break;
-      }
-      if (f.type == hid::R_FEATURE && b->ffield < 0) b->ffield = i;
-      if (f.type == hid::R_INPUT && b->ifield < 0) b->ifield = i;
-      break;
-    }
+  // Path strings for every field, once.
+  const int nf = desc_.size();
+  char (*paths)[96] = (char (*)[96])malloc(nf * 96);
+  if (!paths) return;
+  for (int i = 0; i < nf; ++i) desc_.format_path(desc_[i], paths[i], 96);
+  auto find_field = [&](const char* path, uint8_t type) -> int {
+    for (int i = 0; i < nf; ++i)
+      if (desc_[i].type == type && strcmp(paths[i], path) == 0) return i;
+    return -1;
+  };
+  // Variables: walk the map in priority order, first path present wins.
+  for (int m = 0; m < upsmap::kVarMapCount; ++m) {
+    const upsmap::VarEntry& e = upsmap::kVarMap[m];
+    bool have = false;
+    for (int k = 0; k < n_vbinds_; ++k) if (strcmp(vbinds_[k].e->var, e.var) == 0) { have = true; break; }
+    if (have) continue;
+    int fi = find_field(e.path, hid::R_FEATURE);
+    if (fi < 0) continue;
+    if (n_vbinds_ >= (int)(sizeof vbinds_ / sizeof vbinds_[0])) break;
+    VarBind& b = vbinds_[n_vbinds_++];
+    b.e = &e; b.ffield = fi; b.ifield = find_field(e.path, hid::R_INPUT); b.last_raw = 0; b.string_done = false;
   }
+  // Status flags, same rule: the PresentStatus collection comes first in the
+  // map so every bit is read from the same report (atomic status).
+  for (int m = 0; m < upsmap::kStatusMapCount; ++m) {
+    const upsmap::StatusEntry& e = upsmap::kStatusMap[m];
+    bool have = false;
+    for (int k = 0; k < n_sbinds_; ++k) if (sbinds_[k].flag == e.flag) { have = true; break; }
+    if (have) continue;
+    int fi = find_field(e.path, hid::R_FEATURE);
+    if (fi < 0) continue;
+    if (n_sbinds_ >= (int)(sizeof sbinds_ / sizeof sbinds_[0])) break;
+    StatBind& b = sbinds_[n_sbinds_++];
+    b.flag = e.flag; b.inv = e.inverted; b.ffield = fi; b.ifield = find_field(e.path, hid::R_INPUT);
+  }
+  free(paths);
+
   // Feature reports we need to poll.
   auto need = [&](int fi, bool semi) {
     if (fi < 0) return;

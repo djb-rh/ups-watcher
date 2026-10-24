@@ -111,16 +111,15 @@ void Display::draw_overview(bool full) {
   else { word = "WAITING..."; col = C_MUT; }
 
   int y = HDR + 4;
-  field(6, y + 22, 215, word, &fonts::FreeSansBold18pt7b, col, textdatum_t::middle_left);
-  field(W - 4, y + 22, 96, st, &fonts::Font2, C_MUT, textdatum_t::middle_right);
+  field(6, y + 22, W - 12, word, &fonts::FreeSansBold18pt7b, col, textdatum_t::middle_left);
 
-  // alarm / watcher power line
+  // status tokens + alarm / watcher power line
   y += 46;
   const char* al = upsHid.state().get("ups.alarm");
-  String line2;
-  uint16_t c2 = C_BAD;
-  if (al) line2 = al;
-  else if (app.ext_power_known && !app.ext_power) { line2 = String("Watcher on internal battery ") + app.core_batt + "%"; c2 = C_WARN; }
+  String line2 = st;
+  uint16_t c2 = C_MUT;
+  if (al) { line2 += "  "; line2 += al; c2 = C_BAD; }
+  else if (app.ext_power_known && !app.ext_power) { line2 += "  Watcher on internal battery " + String(app.core_batt) + "%"; c2 = C_WARN; }
   field(6, y + 9, W - 12, line2, &fonts::Font2, c2, textdatum_t::middle_left);
 
   // battery

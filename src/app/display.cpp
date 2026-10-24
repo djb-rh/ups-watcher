@@ -85,6 +85,18 @@ void Display::draw_footer(const char* a, const char* b, const char* c) {
   M5.Display.drawString(c, 255, H - FTR / 2);
 }
 
+// Text fields are drawn with setTextPadding so each repaint overwrites the
+// old pixels in one pass instead of clearing the area first (no flicker).
+static void field(int x, int y, int w, const String& txt, const lgfx::IFont* font, uint16_t fg,
+                  textdatum_t datum = textdatum_t::top_left) {
+  M5.Display.setFont(font);
+  M5.Display.setTextColor(fg, C_BG);
+  M5.Display.setTextDatum(datum);
+  M5.Display.setTextPadding(w);
+  M5.Display.drawString(txt, x, y);
+  M5.Display.setTextPadding(0);
+}
+
 void Display::draw_overview(bool full) {
   const char* st = v("ups.status", "");
   const char* word;
@@ -99,72 +111,52 @@ void Display::draw_overview(bool full) {
   else { word = "WAITING..."; col = C_MUT; }
 
   int y = HDR + 4;
-  M5.Display.fillRect(0, y, W, 44, C_BG);
-  M5.Display.setFont(&fonts::FreeSansBold18pt7b);
-  M5.Display.setTextColor(col, C_BG);
-  M5.Display.setTextDatum(textdatum_t::middle_left);
-  M5.Display.drawString(word, 6, y + 22);
-  // status tokens on the right
-  M5.Display.setFont(&fonts::Font2);
-  M5.Display.setTextColor(C_MUT, C_BG);
-  M5.Display.setTextDatum(textdatum_t::middle_right);
-  M5.Display.drawString(st, W - 4, y + 22);
+  field(6, y + 22, 215, word, &fonts::FreeSansBold18pt7b, col, textdatum_t::middle_left);
+  field(W - 4, y + 22, 96, st, &fonts::Font2, C_MUT, textdatum_t::middle_right);
 
   // alarm / watcher power line
   y += 46;
-  M5.Display.fillRect(0, y, W, 18, C_BG);
-  M5.Display.setTextDatum(textdatum_t::middle_left);
   const char* al = upsHid.state().get("ups.alarm");
-  if (al) { M5.Display.setTextColor(C_BAD, C_BG); M5.Display.drawString(al, 6, y + 9); }
-  else if (app.ext_power_known && !app.ext_power) {
-    M5.Display.setTextColor(C_WARN, C_BG);
-    M5.Display.drawString(String("Watcher on internal battery ") + app.core_batt + "%", 6, y + 9);
-  }
+  String line2;
+  uint16_t c2 = C_BAD;
+  if (al) line2 = al;
+  else if (app.ext_power_known && !app.ext_power) { line2 = String("Watcher on internal battery ") + app.core_batt + "%"; c2 = C_WARN; }
+  field(6, y + 9, W - 12, line2, &fonts::Font2, c2, textdatum_t::middle_left);
 
-  // battery bar
+  // battery
   y += 22;
   int chg = atoi(v("battery.charge", "0"));
-  M5.Display.fillRect(0, y, W, 40, C_BG);
-  M5.Display.setFont(&fonts::Font4);
-  M5.Display.setTextColor(C_FG, C_BG);
-  M5.Display.setTextDatum(textdatum_t::middle_left);
-  M5.Display.drawString(String("Battery ") + v("battery.charge") + "%", 6, y + 12);
-  M5.Display.setTextDatum(textdatum_t::middle_right);
-  M5.Display.setFont(&fonts::Font2);
-  M5.Display.setTextColor(C_MUT, C_BG);
-  M5.Display.drawString(String("runtime ") + runtime_str(), W - 6, y + 12);
-  int bw = W - 12;
-  M5.Display.drawRect(6, y + 26, bw, 10, C_LINE);
-  uint16_t bc = chg > 50 ? C_OK : chg > 20 ? C_WARN : C_BAD;
-  M5.Display.fillRect(7, y + 27, (bw - 2) * chg / 100, 8, bc);
+  field(6, y + 12, 170, String("Battery ") + v("battery.charge") + "%", &fonts::Font4, C_FG, textdatum_t::middle_left);
+  field(W - 6, y + 12, 136, String("runtime ") + runtime_str(), &fonts::Font2, C_MUT, textdatum_t::middle_right);
+  static int last_chg = -1;
+  if (full || chg != last_chg) {
+    last_chg = chg;
+    int bw = W - 12;
+    M5.Display.drawRect(6, y + 26, bw, 10, C_LINE);
+    uint16_t bc = chg > 50 ? C_OK : chg > 20 ? C_WARN : C_BAD;
+    int fillw = (bw - 2) * (chg < 0 ? 0 : chg > 100 ? 100 : chg) / 100;
+    M5.Display.fillRect(7, y + 27, fillw, 8, bc);
+    M5.Display.fillRect(7 + fillw, y + 27, bw - 2 - fillw, 8, C_BG);
+  }
 
   // metrics row
   y += 46;
-  M5.Display.fillRect(0, y, W, H - FTR - y, C_BG);
   struct { const char* label; String val; } cells[3] = {
     {"Load", String(v("ups.load")) + "%"},
     {"Input", String(v("input.voltage")) + " V"},
     {"Batt V", String(v("battery.voltage")) + " V"},
   };
   const char* nom = upsHid.state().get("ups.realpower.nominal");
-  if (nom && upsHid.state().has("ups.load")) {
-    cells[0].val += " ~" + String(atoi(nom) * atoi(v("ups.load")) / 100) + "W";
-  }
+  if (nom && upsHid.state().has("ups.load")) cells[0].val += " ~" + String(atoi(nom) * atoi(v("ups.load")) / 100) + "W";
   for (int i = 0; i < 3; ++i) {
     int x = 6 + i * 106;
-    M5.Display.setFont(&fonts::Font2);
-    M5.Display.setTextColor(C_MUT, C_BG);
-    M5.Display.setTextDatum(textdatum_t::top_left);
-    M5.Display.drawString(cells[i].label, x, y);
-    M5.Display.setFont(&fonts::Font4);
-    M5.Display.setTextColor(C_FG, C_BG);
-    M5.Display.drawString(cells[i].val, x, y + 16);
+    field(x, y, 100, cells[i].label, &fonts::Font2, C_MUT);
+    field(x, y + 16, 100, cells[i].val, &fonts::Font4, C_FG);
   }
-  draw_footer("< Page", lit_ ? "Light" : "Light", "Page >");
+  if (full) draw_footer("< Page", "Light", "Page >");
 }
 
 void Display::draw_detail(bool full) {
-  (void)full;
   static const char* rows[][2] = {
     {"Model", "ups.model"}, {"Serial", "ups.serial"}, {"Firmware", "ups.firmware"},
     {"Status", "ups.status"}, {"Charge", "battery.charge"}, {"Runtime", "battery.runtime"},
@@ -174,54 +166,38 @@ void Display::draw_detail(bool full) {
     {"Batt date", "battery.date"}, {"Mfr date", "ups.mfr.date"}, {"Last xfer", "input.transfer.reason"},
   };
   int n = sizeof rows / sizeof rows[0];
-  M5.Display.fillRect(0, HDR, W, H - HDR - FTR, C_BG);
-  M5.Display.setFont(&fonts::Font2);
   int y = HDR + 2;
   for (int i = 0; i < n; ++i) {
     int col = i / 9, row = i % 9;
     int x = col * 160 + 4;
     int yy = y + row * 21;
-    M5.Display.setTextDatum(textdatum_t::top_left);
-    M5.Display.setTextColor(C_MUT, C_BG);
-    M5.Display.drawString(rows[i][0], x, yy);
-    M5.Display.setTextColor(C_FG, C_BG);
+    if (full) field(x, yy, 60, rows[i][0], &fonts::Font2, C_MUT);
     String val = v(rows[i][1]);
     if (strcmp(rows[i][1], "input.transfer.low") == 0) val += "-" + String(v("input.transfer.high"));
     if (strcmp(rows[i][1], "battery.runtime") == 0) val = runtime_str();
     if (val.length() > 13) val = val.substring(0, 13);
-    M5.Display.setTextDatum(textdatum_t::top_right);
-    M5.Display.drawString(val, x + 152, yy);
+    field(x + 152, yy, 92, val, &fonts::Font2, C_FG, textdatum_t::top_right);
   }
-  draw_footer("< Page", "Light", "Page >");
+  if (full) draw_footer("< Page", "Light", "Page >");
 }
 
 void Display::draw_events(bool full) {
-  (void)full;
-  M5.Display.fillRect(0, HDR, W, H - HDR - FTR, C_BG);
-  M5.Display.setFont(&fonts::Font2);
-  M5.Display.setTextDatum(textdatum_t::top_left);
   int y = HDR + 2;
   int shown = 0;
   for (int i = 0; i < events.count() && shown < 9; ++i, ++shown) {
     const Event& e = events.newest(i);
     String t = EventLog::format_time(e);
     if (e.ts) t = t.substring(5, 16);  // MM-DD HH:MM
-    M5.Display.setTextColor(C_MUT, C_BG);
-    M5.Display.drawString(t, 4, y + shown * 21);
-    M5.Display.setTextColor(C_FG, C_BG);
+    field(4, y + shown * 21, 86, t, &fonts::Font2, C_MUT);
     String m = e.msg;
     if (m.length() > 34) m = m.substring(0, 34);
-    M5.Display.drawString(m, 92, y + shown * 21);
+    field(92, y + shown * 21, W - 94, m, &fonts::Font2, C_FG);
   }
-  if (!events.count()) { M5.Display.setTextColor(C_MUT, C_BG); M5.Display.drawString("No events yet", 4, y); }
-  draw_footer("< Page", "Light", "Page >");
+  if (!events.count()) field(4, y, 200, "No events yet", &fonts::Font2, C_MUT);
+  if (full) draw_footer("< Page", "Light", "Page >");
 }
 
 void Display::draw_network(bool full) {
-  (void)full;
-  M5.Display.fillRect(0, HDR, W, H - HDR - FTR, C_BG);
-  M5.Display.setFont(&fonts::Font2);
-  M5.Display.setTextDatum(textdatum_t::top_left);
   String rows[][2] = {
     {"Wi-Fi", app.sta_connected ? WiFi.SSID() + " " + String(WiFi.RSSI()) + "dBm" : (app.ap_mode ? "AP " + app.ap_ssid : "connecting")},
     {"IP", app_ip()},
@@ -237,12 +213,10 @@ void Display::draw_network(bool full) {
   int n = sizeof rows / sizeof rows[0];
   for (int i = 0; i < n; ++i) {
     int yy = HDR + 2 + i * 19;
-    M5.Display.setTextColor(C_MUT, C_BG);
-    M5.Display.drawString(rows[i][0], 4, yy);
-    M5.Display.setTextColor(C_FG, C_BG);
-    M5.Display.drawString(rows[i][1], 70, yy);
+    if (full) field(4, yy, 64, rows[i][0], &fonts::Font2, C_MUT);
+    field(70, yy, W - 72, rows[i][1], &fonts::Font2, C_FG);
   }
-  draw_footer("< Page", "Light", "Page >");
+  if (full) draw_footer("< Page", "Light", "Page >");
 }
 
 void Display::task() {

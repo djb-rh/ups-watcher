@@ -3,6 +3,8 @@
 #include <Arduino.h>
 #include <M5Unified.h>
 #include <esp_system.h>
+#include <esp_attr.h>
+#include <Preferences.h>
 #include <WiFi.h>
 #include <ESPmDNS.h>
 #include <SPI.h>
@@ -202,7 +204,8 @@ static void power_task() {
       app.power_lost_ms = now; app.power_lost_time = time(nullptr);
       events.add("WATCHER LOST 5V INPUT (battery %d%%) - UPS output dead?", app.core_batt);
     } else {
-      events.add("Watcher 5V input restored after %lus", (unsigned long)(now - app.power_lost_ms) / 1000);
+      if (app.power_lost_ms) events.add("Watcher 5V input restored after %lus", (unsigned long)(now - app.power_lost_ms) / 1000);
+      else events.add("Watcher 5V input restored (booted on battery %lus ago)", (unsigned long)(now - app.boot_ms) / 1000);
       app.power_lost_ms = 0;
     }
   }
@@ -363,6 +366,62 @@ static void buttons_task() {
   }
 }
 
+// ------------------------------------------------------------- boot forensics
+//
+// RTC slow memory keeps its contents through any reset that leaves the 3.3 V
+// rail up (EN pin, software, watchdog) but not through a real power loss. A
+// marker there separates "something pulsed reset" from "the supply collapsed".
+// A heartbeat in NVS every couple of minutes lets a cold start say roughly
+// when the power went away.
+static constexpr uint32_t RTC_MAGIC = 0x55505357;  // "UPSW"
+RTC_NOINIT_ATTR static uint32_t rtc_magic;
+RTC_NOINIT_ATTR static uint32_t rtc_uptime_s;
+RTC_NOINIT_ATTR static uint32_t rtc_epoch;
+
+static void heartbeat_task() {
+  static uint32_t last = 0;
+  uint32_t now = millis();
+  rtc_uptime_s = (now - app.boot_ms) / 1000;
+  time_t t = time(nullptr);
+  if (t > 1600000000) rtc_epoch = (uint32_t)t;
+  if (now - last < 120000 || t < 1600000000) return;
+  last = now;
+  Preferences p;
+  if (p.begin("upsw", false)) { p.putUInt("hb", (uint32_t)t); p.end(); }
+}
+
+static String time_str(time_t t) {
+  if (t < 1600000000) return "";
+  struct tm tmv; localtime_r(&t, &tmv);
+  char b[32]; strftime(b, sizeof b, "%Y-%m-%d %H:%M", &tmv);
+  return String(b);
+}
+
+static void boot_forensics() {
+  bool warm = rtc_magic == RTC_MAGIC;
+  uint32_t prev_up = warm ? rtc_uptime_s : 0, prev_epoch = warm ? rtc_epoch : 0;
+  rtc_magic = RTC_MAGIC; rtc_uptime_s = 0; rtc_epoch = 0;
+  uint32_t hb = 0;
+  Preferences p;
+  if (p.begin("upsw", true)) { hb = p.getUInt("hb", 0); p.end(); }
+  const char* why = app_reset_reason();
+  if (esp_reset_reason() == ESP_RST_POWERON) {
+    if (warm) {
+      app.boot_kind = "reset while powered (EN pin pulsed; the 3.3 V rail never dropped)";
+      events.add("Boot: UPS Watcher %s. Reset while powered - EN pin pulsed, 3.3 V never dropped. Previous uptime %s%s",
+                 UPSW_VERSION, app_uptime_str(prev_up).c_str(), prev_epoch ? (", last alive " + time_str(prev_epoch)).c_str() : "");
+    } else {
+      app.boot_kind = "cold start (power was lost)";
+      events.add("Boot: UPS Watcher %s. Cold start - power was lost%s", UPSW_VERSION,
+                 hb ? (", last heartbeat " + time_str(hb)).c_str() : "");
+    }
+  } else {
+    app.boot_kind = why;
+    events.add("Boot: UPS Watcher %s, reset reason: %s%s", UPSW_VERSION, why,
+               warm && prev_up ? (", previous uptime " + app_uptime_str(prev_up)).c_str() : "");
+  }
+}
+
 // ------------------------------------------------------------- setup / loop
 
 void setup() {
@@ -384,7 +443,7 @@ void setup() {
   M5.Display.setBrightness(settings.brightness);
 
   events.begin();
-  events.add("Boot: UPS Watcher %s, reset reason: %s", UPSW_VERSION, app_reset_reason());
+  boot_forensics();
   if (M5.Power.getType() == m5::Power_Class::pmic_ip5306) {
     // Keep the IP5306's boost converter running permanently ("boost output
     // normally open"). M5Unified leaves it off, so the chip hands over between
@@ -424,6 +483,7 @@ void loop() {
   upsHid.task();
   wifi_task();
   power_task();
+  heartbeat_task();
   ups_task();
   sim_task();
 

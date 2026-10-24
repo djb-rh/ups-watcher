@@ -91,7 +91,7 @@ static void handle_status() {
   w["fs_used"] = LittleFS.usedBytes();
   w["fs_total"] = LittleFS.totalBytes();
   w["events_n"] = events.count();
-  w["reset"] = app_reset_reason();
+  w["reset"] = app.boot_kind;
   char ctl[16];
   snprintf(ctl, sizeof ctl, "%02x %02x %02x", app.ip5306_ctl[0], app.ip5306_ctl[1], app.ip5306_ctl[2]);
   w["ip5306"] = ctl;

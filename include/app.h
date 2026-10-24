@@ -22,6 +22,7 @@ struct AppStatus {
   time_t power_lost_time = 0;
   bool sim_active = false;
   uint32_t boot_ms = 0;
+  String boot_kind;            // how this boot came about, for the status page
 };
 
 extern AppStatus app;

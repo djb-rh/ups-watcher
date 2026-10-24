@@ -46,6 +46,7 @@ void UpsHid::set_extra_alarm(const char* text) {
 }
 
 void UpsHid::compose_status() {
+  if (!data_ok_ && !offline_) return;  // nothing read yet: stay DATA-STALE rather than guess
   char st[80], al[160];
   upsmap::build_status(flags_, charge_, st, sizeof st);
   if (offline_) snprintf(st, sizeof st, "OFF");
@@ -290,6 +291,7 @@ void UpsHid::start_next_poll() {
     } else {
       r.fails++;
       frame_irq(false);
+      Serial.printf("[usb] get_report(%u) refused\r\n", r.id);
     }
     return;
   }
@@ -297,9 +299,16 @@ void UpsHid::start_next_poll() {
 
 void UpsHid::task() {
   if (!g_host) return;
-  g_host->task();
+  g_host->task(0);  // timeout 0: the default waits forever for a USB event
   if (!mounted_ || !have_desc_) return;
   uint32_t now = millis();
+  static uint32_t dbg = 0;
+  if (now - dbg > 10000) {
+    dbg = now;
+    Serial.printf("[usb] polls=%lu ok_cycles=%lu busy=%d idx=%d/%d data_ok=%d flags=%08lx charge=%d\r\n",
+                  (unsigned long)polls_, (unsigned long)cycle_, (int)busy_, poll_idx_, n_reports_, (int)data_ok_,
+                  (unsigned long)flags_, charge_);
+  }
   if (dev_strings_pending_) { fetch_device_strings(); return; }
   if (busy_ && now - busy_since_ > 1500) {
     busy_ = false;  // lost completion; move on
@@ -314,7 +323,7 @@ void UpsHid::task() {
 
 bool UpsHid::wait_idle(uint32_t ms) {
   uint32_t t0 = millis();
-  while (busy_ && millis() - t0 < ms) { g_host->task(); delay(1); }
+  while (busy_ && millis() - t0 < ms) { g_host->task(0); delay(1); }
   return !busy_;
 }
 
@@ -334,7 +343,7 @@ bool UpsHid::write_feature(const hid::Field& f, int32_t value) {
     busy_ = false; set_in_flight_ = false; frame_irq(false); return false;
   }
   uint32_t t0 = millis();
-  while (set_in_flight_ && millis() - t0 < 800) { g_host->task(); delay(1); }
+  while (set_in_flight_ && millis() - t0 < 800) { g_host->task(0); delay(1); }
   busy_ = false;
   frame_irq(false);
   bool ok = !set_in_flight_ && set_ok_;

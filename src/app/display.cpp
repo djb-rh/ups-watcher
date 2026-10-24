@@ -91,7 +91,8 @@ void Display::draw_overview(bool full) {
   uint16_t col;
   if (!upsHid.connected() && !app.sim_active) {
     word = app.ups_lost_ms ? "UPS LOST" : "NO UPS"; col = app.ups_lost_ms ? C_BAD : C_MUT;
-  } else if (strstr(st, "OFF")) { word = "UPS LOST"; col = C_BAD; }
+  } else if (upsHid.connected() && !upsHid.data_ok()) { word = "READING..."; col = C_MUT; }
+  else if (strstr(st, "OFF")) { word = "UPS LOST"; col = C_BAD; }
   else if (strstr(st, "LB")) { word = "LOW BATTERY"; col = C_BAD; }
   else if (strstr(st, "OB")) { word = "ON BATTERY"; col = C_WARN; }
   else if (strstr(st, "OL")) { word = "ONLINE"; col = C_OK; }

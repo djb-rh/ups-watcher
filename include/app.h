@@ -15,6 +15,7 @@ struct AppStatus {
   int core_batt = -1;          // IP5306 level (0/25/50/75/100), -1 unknown
   bool core_charging = false;  // IP5306 says current is going into the cell
   bool core_full = false;      // IP5306 says the cell is full
+  uint8_t ip5306_ctl[3] = {0, 0, 0};  // SYS_CTL0..2 as read after our setup
   uint32_t ups_lost_ms = 0;    // millis() when the UPS vanished (0 = not lost)
   time_t ups_lost_time = 0;
   uint32_t power_lost_ms = 0;
@@ -33,3 +34,4 @@ void app_wifi_reconfigure();          // after settings changed
 String app_ip();
 String app_uptime_str(uint32_t secs);
 String app_now_str();
+const char* app_reset_reason();

@@ -91,10 +91,10 @@ static void handle_status() {
   w["fs_used"] = LittleFS.usedBytes();
   w["fs_total"] = LittleFS.totalBytes();
   w["events_n"] = events.count();
-  static const char* reasons[] = {"unknown", "power on", "external reset", "software reset", "panic", "interrupt watchdog",
-                                  "task watchdog", "other watchdog", "deep sleep wake", "brownout", "SDIO"};
-  int rr = esp_reset_reason();
-  w["reset"] = rr >= 0 && rr < (int)(sizeof reasons / sizeof reasons[0]) ? reasons[rr] : "unknown";
+  w["reset"] = app_reset_reason();
+  char ctl[16];
+  snprintf(ctl, sizeof ctl, "%02x %02x %02x", app.ip5306_ctl[0], app.ip5306_ctl[1], app.ip5306_ctl[2]);
+  w["ip5306"] = ctl;
   w["usb_connected"] = upsHid.connected();
   w["sim"] = app.sim_active;
   w["polls"] = upsHid.poll_count();
@@ -274,6 +274,18 @@ void WebUi::begin() {
   server.on("/watcher", HTTP_GET, []() { send_progmem("text/html", PAGE_WATCHER); });
   server.on("/api/status", HTTP_GET, handle_status);
   server.on("/api/hid", HTTP_GET, handle_hid);
+  server.on("/api/events", HTTP_GET, []() {
+    JsonDocument doc;
+    JsonArray a = doc.to<JsonArray>();
+    for (int i = 0; i < events.count(); ++i) {
+      const Event& e = events.newest(i);
+      a.add(EventLog::format_time(e) + "  " + e.msg);
+    }
+    String out;
+    serializeJson(doc, out);
+    server.sendHeader("Cache-Control", "no-cache");
+    server.send(200, "application/json", out);
+  });
   server.on("/api/config", HTTP_GET, handle_config_get);
   server.on("/api/config", HTTP_POST, handle_config_post);
   server.on("/api/scan", HTTP_GET, handle_scan);

@@ -85,6 +85,14 @@ void Display::draw_footer(const char* a, const char* b, const char* c) {
   M5.Display.drawString(c, 255, H - FTR / 2);
 }
 
+// Trim a string (with "..") until it fits in w pixels of the given font.
+static String fit(String s, int w, const lgfx::IFont* font) {
+  M5.Display.setFont(font);
+  if (M5.Display.textWidth(s) <= w) return s;
+  while (s.length() > 1 && M5.Display.textWidth(s + "..") > w) s.remove(s.length() - 1);
+  return s + "..";
+}
+
 // Text fields are drawn with setTextPadding so each repaint overwrites the
 // old pixels in one pass instead of clearing the area first (no flicker).
 static void field(int x, int y, int w, const String& txt, const lgfx::IFont* font, uint16_t fg,
@@ -113,14 +121,25 @@ void Display::draw_overview(bool full) {
   int y = HDR + 4;
   field(6, y + 22, W - 12, word, &fonts::FreeSansBold18pt7b, col, textdatum_t::middle_left);
 
-  // status tokens + alarm / watcher power line
+  // line 2: status tokens + UPS alarm text (the Watcher's own power is line 3)
   y += 46;
-  const char* al = upsHid.state().get("ups.alarm");
+  String al = upsHid.state().get("ups.alarm") ? upsHid.state().get("ups.alarm") : "";
+  int wp = al.indexOf("Watcher on internal battery");
+  if (wp >= 0) al = al.substring(0, wp);
+  al.trim();
   String line2 = st;
   uint16_t c2 = C_MUT;
-  if (al) { line2 += "  "; line2 += al; c2 = C_BAD; }
-  else if (app.ext_power_known && !app.ext_power) { line2 += "  Watcher on internal battery " + String(app.core_batt) + "%"; c2 = C_WARN; }
-  field(6, y + 9, W - 12, line2, &fonts::Font2, c2, textdatum_t::middle_left);
+  if (al.length()) { line2 += "  " + al; c2 = C_BAD; }
+  field(6, y + 9, W - 6, fit(line2, W - 8, &fonts::Font2), &fonts::Font2, c2, textdatum_t::middle_left);
+
+  // line 3: the Watcher running on its own cell
+  y += 18;
+  String line3;
+  if (app.ext_power_known && !app.ext_power) {
+    line3 = "Watcher on its own battery " + String(app.core_batt) + "%";
+    if (app.power_lost_ms) line3 += " for " + app_uptime_str((millis() - app.power_lost_ms) / 1000);
+  }
+  field(6, y + 9, W - 6, fit(line3, W - 8, &fonts::Font2), &fonts::Font2, C_WARN, textdatum_t::middle_left);
 
   // battery
   y += 22;

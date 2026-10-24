@@ -2,6 +2,7 @@
 // APC UPSes over USB HID. See README.md.
 #include <Arduino.h>
 #include <M5Unified.h>
+#include <esp_system.h>
 #include <WiFi.h>
 #include <ESPmDNS.h>
 #include <SPI.h>
@@ -33,6 +34,13 @@ String app_uptime_str(uint32_t s) {
   if (s >= 86400) snprintf(b, sizeof b, "%lud %luh %lum", (unsigned long)s / 86400, (unsigned long)(s % 86400) / 3600, (unsigned long)(s % 3600) / 60);
   else snprintf(b, sizeof b, "%luh %lum %lus", (unsigned long)s / 3600, (unsigned long)(s % 3600) / 60, (unsigned long)s % 60);
   return String(b);
+}
+
+const char* app_reset_reason() {
+  static const char* reasons[] = {"unknown", "power on", "external reset", "software reset", "panic", "interrupt watchdog",
+                                  "task watchdog", "other watchdog", "deep sleep wake", "brownout", "SDIO"};
+  int rr = esp_reset_reason();
+  return rr >= 0 && rr < (int)(sizeof reasons / sizeof reasons[0]) ? reasons[rr] : "unknown";
 }
 
 String app_now_str() {
@@ -376,7 +384,16 @@ void setup() {
   M5.Display.setBrightness(settings.brightness);
 
   events.begin();
-  events.add("Boot: UPS Watcher %s, reset reason %d", UPSW_VERSION, (int)esp_reset_reason());
+  events.add("Boot: UPS Watcher %s, reset reason: %s", UPSW_VERSION, app_reset_reason());
+  if (M5.Power.getType() == m5::Power_Class::pmic_ip5306) {
+    // Keep the IP5306's boost converter running permanently ("boost output
+    // normally open"). M5Unified leaves it off, so the chip hands over between
+    // charger and boost when the 5 V input is pulled or returns, and the Core
+    // can reset during that handover.
+    M5.Power.Ip5306.setPowerBoostKeepOn(true);
+    for (int i = 0; i < 3; ++i) app.ip5306_ctl[i] = M5.In_I2C.readRegister8(0x75, i, 400000);
+    Serial.printf("[power] IP5306 SYS_CTL0..2 = %02x %02x %02x\r\n", app.ip5306_ctl[0], app.ip5306_ctl[1], app.ip5306_ctl[2]);
+  }
   display.begin();
 
   upsHid.on_event = [](const char* m) { events.add("%s", m); };

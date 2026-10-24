@@ -18,6 +18,14 @@ ups.status: OL CHRG
 ...
 ```
 
+## Install
+
+The easiest way: open **https://djb-rh.github.io/ups-watcher/** in Chrome or
+Edge, plug the Core Basic in over USB-C and click *Install*. Release images are
+also under [Releases](https://github.com/djb-rh/ups-watcher/releases):
+`ups-watcher-<ver>.bin` is the full image for offset 0, `-update.bin` the app
+alone for the device's own *Update* page.
+
 ## Hardware
 
 | Part | Notes |
@@ -118,6 +126,8 @@ pio run -e app -t upload          # the firmware
 pio run -e probe -t upload        # hardware probe: dumps the HID descriptor and all reports
 pio test -e native                # host-side tests for the parser, state and NUT protocol
 tools/nutclient.py ups-watcher.local
+tools/release.sh                  # dist/ images + site/ web installer
+tools/publish_site.sh             # push site/ to the gh-pages branch
 ```
 
 ## How it works

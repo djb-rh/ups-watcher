@@ -432,8 +432,8 @@ static void boot_forensics() {
   const char* why = app_reset_reason();
   int raw0 = rtc_get_reset_reason(0), raw1 = rtc_get_reset_reason(1);
   if (warm && rtc_sd_tag == SD_MAGIC) {
-    events.add("Last run: esp_restart() by task '%s' at uptime %s, %s", rtc_sd_task,
-               app_uptime_str(rtc_sd_uptime_s).c_str(), rtc_our_reboot ? "asked by UPS Watcher" : "NOT asked by UPS Watcher");
+    events.add("Last run: esp_restart() from '%s' at %s, %s", rtc_sd_task,
+               app_uptime_str(rtc_sd_uptime_s).c_str(), rtc_our_reboot ? "ours" : "NOT ours");
     String bt;
     for (int i = 0; i < 6 && rtc_sd_bt[i]; ++i) { char b[12]; snprintf(b, sizeof b, " %08lx", (unsigned long)rtc_sd_bt[i]); bt += b; }
     if (!rtc_our_reboot) events.add("Restart backtrace:%s", bt.c_str());

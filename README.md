@@ -62,6 +62,11 @@ by polling feature reports every *poll interval* seconds (default 5) instead.
 3. Enter your Wi-Fi, optional NUT user/password, UPS name, and save. It reboots and
    joins your network as `ups-watcher.local`.
 
+**Power:** the red side button is the ESP32 reset (one press reboots) and the
+IP5306's key. Like a power bank, the IP5306 cannot switch off while anything is
+plugged into the USB-C; unplug first, then **double-click** the red button to
+power down. Plugging a cable in powers it up again. Press-and-hold does nothing.
+
 Buttons: **A** previous page, **B** backlight on/off, **C** next page. Pages:
 overview, UPS details, event log, and the **Watcher** page (its own power
 source and internal battery, Wi-Fi signal, IP, NUT clients, USB host, uptime,

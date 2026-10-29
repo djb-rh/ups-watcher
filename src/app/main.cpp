@@ -485,11 +485,21 @@ void setup() {
   boot_forensics();
   esp_register_shutdown_handler(shutdown_hook);
   if (M5.Power.getType() == m5::Power_Class::pmic_ip5306) {
-    // Keep the IP5306's boost converter running permanently ("boost output
-    // normally open"). M5Unified leaves it off, so the chip hands over between
-    // charger and boost when the 5 V input is pulled or returns, and the Core
-    // can reset during that handover.
-    M5.Power.Ip5306.setPowerBoostKeepOn(true);
+    // Button behaviour. The red side button is the IP5306 KEY input as well as
+    // the ESP32 reset. SYS_CTL1 bit7 picks the power-off gesture (0 = hold
+    // 2 s, 1 = double-click) and bit6 the flashlight gesture (0 = double-click,
+    // 1 = hold). M5Unified leaves both at 0, so a double-click toggled the
+    // (absent) flashlight output and never powered down. Swap them: double-
+    // click powers off, the hold goes to the disabled WLED. SYS_CTL0 bit0 must
+    // stay set for KEY power-off to work at all; bit1 ("boost output normally
+    // open") is left clear - it was tried against the unplug reboot and did
+    // nothing. None of this can cut power while the USB-C input is present.
+    {
+      uint8_t c0 = M5.In_I2C.readRegister8(0x75, 0x00, 400000);
+      uint8_t c1 = M5.In_I2C.readRegister8(0x75, 0x01, 400000);
+      M5.In_I2C.writeRegister8(0x75, 0x00, (c0 | 0x01) & ~0x02, 400000);
+      M5.In_I2C.writeRegister8(0x75, 0x01, c1 | 0xC0, 400000);
+    }
     for (int i = 0; i < 3; ++i) app.ip5306_ctl[i] = M5.In_I2C.readRegister8(0x75, i, 400000);
     Serial.printf("[power] IP5306 SYS_CTL0..2 = %02x %02x %02x\r\n", app.ip5306_ctl[0], app.ip5306_ctl[1], app.ip5306_ctl[2]);
   }

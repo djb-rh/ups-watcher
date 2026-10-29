@@ -65,7 +65,9 @@ by polling feature reports every *poll interval* seconds (default 5) instead.
 **Power:** the red side button is the ESP32 reset (one press reboots) and the
 IP5306's key. Like a power bank, the IP5306 cannot switch off while anything is
 plugged into the USB-C; unplug first, then **double-click** the red button to
-power down. Plugging a cable in powers it up again. Press-and-hold does nothing.
+power down (the firmware sets this gesture in the IP5306 at boot; stock
+M5Unified wires it to a 2 s hold instead). Plugging a cable in powers it up
+again. Press-and-hold only resets the ESP32.
 
 Buttons: **A** previous page, **B** backlight on/off, **C** next page. Pages:
 overview, UPS details, event log, and the **Watcher** page (its own power

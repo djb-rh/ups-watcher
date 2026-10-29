@@ -306,6 +306,11 @@ void WebUi::begin() {
     events.add("Reboot requested from web UI");
     app_request_reboot(500);
   });
+  server.on("/api/poweroff", HTTP_POST, []() {
+    if (!auth_ok()) return;
+    if (app_request_power_off("web UI")) server.send(200, "text/plain", "Powering off; the screen goes dark in about 10 s");
+    else server.send(409, "text/plain", "5 V input present; the IP5306 cannot cut power while USB-C is plugged in. Unplug first.");
+  });
   server.on("/api/factory", HTTP_POST, []() {
     if (!auth_ok()) return;
     server.send(200, "text/plain", "erasing");

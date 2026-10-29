@@ -60,6 +60,36 @@ String app_now_str() {
 
 void app_request_reboot(uint32_t delay_ms) { reboot_at = millis() + delay_ms; if (!reboot_at) reboot_at = 1; rtc_our_reboot = 1; }
 
+// Software power-off. The IP5306 has no "off" register, but it does drop the
+// boost output when the load stays under ~45 mA for the light-load time. So:
+// shorten that time to 8 s, put the LCD and the ESP32 to sleep, and let the
+// chip switch itself off. Pointless while the 5 V input is present - the
+// output is then VIN pass-through and the chip cannot cut it - so refuse.
+static uint32_t poweroff_at = 0;
+static String poweroff_who;
+bool app_request_power_off(const char* who) {
+  if (app.ext_power_known && app.ext_power) {
+    events.add("Power off from %s refused: 5 V input present, unplug first", who);
+    return false;
+  }
+  poweroff_who = who;
+  poweroff_at = millis() + 300; if (!poweroff_at) poweroff_at = 1;
+  return true;
+}
+static void power_off_now() {
+  events.add("Powering off (%s)", poweroff_who.c_str());
+  Serial.printf("[power] powering off (%s)\r\n", poweroff_who.c_str());
+  display.notice("Powering off", "the screen goes dark in about 10 s");
+  if (M5.Power.getType() == m5::Power_Class::pmic_ip5306) {
+    uint8_t c2 = M5.In_I2C.readRegister8(0x75, 0x02, 400000);
+    M5.In_I2C.writeRegister8(0x75, 0x02, c2 & ~0x0C, 400000);   // light-load shutdown 8 s
+  }
+  delay(1500);
+  M5.Display.setBrightness(0);
+  M5.Display.sleep();
+  M5.Power.powerOff();   // IP5306 path: boost keep-on off, then deep sleep; never returns
+}
+
 void app_factory_reset() {
   events.add("Factory reset");
   Settings::factory_reset();
@@ -353,6 +383,16 @@ static void buttons_task() {
   if (M5.BtnA.wasClicked()) display.prev_page();
   if (M5.BtnC.wasClicked()) display.next_page();
   if (M5.BtnB.wasClicked()) display.toggle_light();
+  // Hold B for 3 s: power off (only works unplugged, see app_request_power_off).
+  static bool b_fired = false;
+  if (M5.BtnB.pressedFor(3000)) {
+    if (!b_fired) {
+      b_fired = true;
+      if (!app_request_power_off("button B")) display.notice("Can't power off", "unplug the USB-C first, then hold B again", 3000);
+    }
+  } else if (M5.BtnB.isReleased()) {
+    b_fired = false;
+  }
   // Hold A + C for 6 s: forget Wi-Fi and reopen the setup portal.
   static uint32_t hold_since = 0;
   if (M5.BtnA.isPressed() && M5.BtnC.isPressed()) {
@@ -485,21 +525,15 @@ void setup() {
   boot_forensics();
   esp_register_shutdown_handler(shutdown_hook);
   if (M5.Power.getType() == m5::Power_Class::pmic_ip5306) {
-    // Button behaviour. The red side button is the IP5306 KEY input as well as
-    // the ESP32 reset. SYS_CTL1 bit7 picks the power-off gesture (0 = hold
-    // 2 s, 1 = double-click) and bit6 the flashlight gesture (0 = double-click,
-    // 1 = hold). M5Unified leaves both at 0, so a double-click toggled the
-    // (absent) flashlight output and never powered down. Swap them: double-
-    // click powers off, the hold goes to the disabled WLED. SYS_CTL0 bit0 must
-    // stay set for KEY power-off to work at all; bit1 ("boost output normally
-    // open") is left clear - it was tried against the unplug reboot and did
-    // nothing. None of this can cut power while the USB-C input is present.
-    {
-      uint8_t c0 = M5.In_I2C.readRegister8(0x75, 0x00, 400000);
-      uint8_t c1 = M5.In_I2C.readRegister8(0x75, 0x01, 400000);
-      M5.In_I2C.writeRegister8(0x75, 0x00, (c0 | 0x01) & ~0x02, 400000);
-      M5.In_I2C.writeRegister8(0x75, 0x01, c1 | 0xC0, 400000);
-    }
+    // The IP5306 is left exactly as M5Unified configures it at every boot
+    // (SYS_CTL0..2 = 31 1d 6c): key power-off enabled, double-click = power
+    // off, hold = flashlight (there is none), boost resumes after VIN is
+    // pulled, 64 s light-load shutdown. Earlier builds set the "boost output
+    // normally open" bit against the unplug reboot; it did nothing for that
+    // and keeps the output on through a key power-off, so it is gone. Note the
+    // red button also resets the ESP32, so M5Unified rewrites these registers
+    // in the middle of any double-click - any value other than the stock one
+    // is only in place between clicks. Software power-off: app_request_power_off.
     for (int i = 0; i < 3; ++i) app.ip5306_ctl[i] = M5.In_I2C.readRegister8(0x75, i, 400000);
     Serial.printf("[power] IP5306 SYS_CTL0..2 = %02x %02x %02x\r\n", app.ip5306_ctl[0], app.ip5306_ctl[1], app.ip5306_ctl[2]);
   }
@@ -554,6 +588,7 @@ void loop() {
   buttons_task();
   display.task();
 
+  if (poweroff_at && (int32_t)(millis() - poweroff_at) >= 0) power_off_now();
   if (reboot_at && (int32_t)(millis() - reboot_at) >= 0) {
     Serial.println("[app] rebooting");
     delay(100);

@@ -9,6 +9,7 @@ class Display {
   void next_page();
   void prev_page();
   void toggle_light();
+  void notice(const char* line1, const char* line2, uint32_t ms = 0);  // full-screen message; ms=0 keeps it until the next page change
   int page() const { return page_; }
 
  private:
@@ -20,7 +21,8 @@ class Display {
   void draw_footer(const char* a, const char* b, const char* c);
   int page_ = 0;
   bool lit_ = true;
-  uint32_t last_activity_ms_ = 0, last_draw_ms_ = 0;
+  uint32_t last_activity_ms_ = 0, last_draw_ms_ = 0, notice_until_ = 0;
+  bool notice_sticky_ = false;
   uint32_t last_gen_ = 0xFFFFFFFF;
   int last_page_ = -1;
   bool last_alarm_ = false;

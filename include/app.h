@@ -28,6 +28,7 @@ struct AppStatus {
 extern AppStatus app;
 
 void app_request_reboot(uint32_t delay_ms = 500);
+bool app_request_power_off(const char* who);  // false = refused (5 V input present)
 void app_factory_reset();
 void app_sim_set(const char* mode);  // "ol", "ob", "lb", "off", "none"
 const char* app_sim_mode();

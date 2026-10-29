@@ -69,7 +69,7 @@ static const char PAGE_WATCHER[] PROGMEM = R"HTML(<!doctype html><html><head><me
 <header><h1>UPS Watcher</h1><nav><a href="/">Status</a><a class="on" href="/watcher">Watcher</a><a href="/hid">HID</a><a href="/config">Settings</a><a href="/update">Update</a></nav></header>
 <main>
 <div class="grid">
- <div class="card"><h2>Power</h2><div id="pw" class="big">…</div><div class="small" id="pwsub"></div><div class="small" id="pwlost" style="color:var(--warn)"></div></div>
+ <div class="card"><h2>Power</h2><div id="pw" class="big">…</div><div class="small" id="pwsub"></div><div class="small" id="pwlost" style="color:var(--warn)"></div><div class="btns"><button type="button" class="danger" onclick="poff()">Power off</button><span class="small" id="poffres"></span></div></div>
  <div class="card"><h2>Internal battery</h2><div class="big"><span id="bt">–</span></div><div class="bar"><i id="btbar" style="width:0"></i></div><div class="small" id="btsub"></div></div>
  <div class="card"><h2>Wi-Fi</h2><div id="wf" class="big">…</div><div class="small" id="wfsub"></div></div>
  <div class="card"><h2>UPS link</h2><div id="ul" class="big">…</div><div class="small" id="ulsub"></div></div>
@@ -89,6 +89,7 @@ function kb(b){return Math.round(b/1024)+' KB'}
 function at(t){return t?new Date(t*1000).toLocaleString():''}
 function rows(id,r){var t='';r.forEach(function(x){if(x[1]===undefined||x[1]==='')return;t+='<tr><td class="k">'+x[0]+'</td><td>'+x[1]+'</td></tr>'});document.getElementById(id).innerHTML=t}
 function badge(c,t){return'<span class="badge '+c+'">'+t+'</span>'}
+async function poff(){if(!confirm('Power the Watcher off? This only works with the USB-C unplugged; plug a cable in to start it again.'))return;var r=await fetch('/api/poweroff',{method:'POST'});document.getElementById('poffres').textContent=await r.text()}
 async function tick(){try{var d=await (await fetch('/api/status')).json();var w=d.watcher,v=d.vars||{};
 var pw=document.getElementById('pw');
 if(!w.ext_power_known)pw.innerHTML=badge('mut','unknown')+' no IP5306';

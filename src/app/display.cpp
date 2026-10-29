@@ -52,8 +52,9 @@ void Display::toggle_light() {
   M5.Display.setBrightness(lit_ ? settings.brightness : 0);
 }
 
-void Display::next_page() { wake(); page_ = (page_ + 1) % 4; }
-void Display::prev_page() { wake(); page_ = (page_ + 3) % 4; }
+void Display::next_page() { wake(); page_ = (page_ + 1) % 4; notice_until_ = 0; notice_sticky_ = false; }
+void Display::prev_page() { wake(); page_ = (page_ + 3) % 4; notice_until_ = 0; notice_sticky_ = false; }
+
 
 void Display::draw_header(bool full) {
   String right;
@@ -103,6 +104,16 @@ static void field(int x, int y, int w, const String& txt, const lgfx::IFont* fon
   M5.Display.setTextPadding(w);
   M5.Display.drawString(txt, x, y);
   M5.Display.setTextPadding(0);
+}
+
+void Display::notice(const char* line1, const char* line2, uint32_t ms) {
+  wake();
+  M5.Display.fillScreen(C_BG);
+  field(W / 2, H / 2 - 16, W, line1, &fonts::FreeSansBold18pt7b, C_FG, textdatum_t::middle_center);
+  field(W / 2, H / 2 + 22, W, line2, &fonts::Font2, C_MUT, textdatum_t::middle_center);
+  notice_sticky_ = (ms == 0);
+  notice_until_ = millis() + (ms ? ms : 1);
+  last_page_ = -1;  // full redraw once the notice is over
 }
 
 void Display::draw_overview(bool full) {
@@ -309,6 +320,10 @@ void Display::task() {
   if (lit_ && settings.disp_timeout_s && !alarm && now - last_activity_ms_ > settings.disp_timeout_s * 1000UL) {
     lit_ = false;
     M5.Display.setBrightness(0);
+  }
+  if (notice_until_) {
+    if (notice_sticky_ || (int32_t)(now - notice_until_) < 0) return;
+    notice_until_ = 0;
   }
   bool page_changed = page_ != last_page_;
   uint32_t gen = upsHid.state().generation();

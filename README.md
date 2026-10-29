@@ -69,8 +69,13 @@ feeding it. Unplugged, the chip's own gesture is a **double-click** on the red
 button. If that does nothing on your unit, use the firmware's power-off
 instead: **hold B for 3 s**, or the **Power off** button on the Watcher web
 page. That shortens the IP5306's light-load timer and puts the Core to sleep,
-and the chip cuts the output about 10 s later. Plugging a cable in powers it
-up again.
+and the chip cuts the output about 10 s later. Once it is off, any press of the
+red button (or plugging a cable in) starts it again, which is easy to mistake
+for "it never turned off". Two other things make the screen go dark: the
+backlight timeout (Settings, 300 s by default; any button wakes it), and the
+110 mAh cell running out on battery, which takes only a few minutes with the
+backlight and Wi-Fi on. The event log on the Watcher page records the cause
+of every boot, so it tells these apart.
 
 Buttons: **A** previous page, **B** backlight on/off, **C** next page. Pages:
 overview, UPS details, event log, and the **Watcher** page (its own power
@@ -111,6 +116,10 @@ something is wrong.
   screen, added to `ups.alarm`, and exported as `watcher.power` /
   `watcher.battery.charge` so a NUT client can tell "the UPS output died" from
   "the Watcher rebooted".
+* **Wi-Fi joins the strongest access point for the SSID** (all-channel scan).
+  Before 0.1.3 the Arduino default fast scan took the first AP answering on
+  the lowest channel; with a weak AP there, a join after a reboot could take
+  minutes or never happen.
 * **The Core itself may reboot at the moment its 5 V input disappears.** The
   IP5306 power chip hands over from charger to boost converter when VIN goes
   away and its output sags for a few milliseconds; depending on the sag the

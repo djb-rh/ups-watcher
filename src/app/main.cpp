@@ -163,6 +163,12 @@ static void stop_ap() {
 static void start_sta() {
   if (settings.wifi_ssid.isEmpty()) return;
   WiFi.setHostname(settings.hostname.c_str());
+  // The SSID here is served by several APs at very different strengths. The
+  // Arduino default is a fast scan that joins the first AP answering on the
+  // lowest channel, which was the marginal one, and the join then failed or
+  // took minutes. Scan every channel and take the strongest.
+  WiFi.setScanMethod(WIFI_ALL_CHANNEL_SCAN);
+  WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
   WiFi.begin(settings.wifi_ssid.c_str(), settings.wifi_pass.c_str());
   sta_started_ms = last_sta_retry_ms = millis();
 }
@@ -172,7 +178,7 @@ static void on_wifi_event(WiFiEvent_t ev, WiFiEventInfo_t info) {
   switch (ev) {
     case ARDUINO_EVENT_WIFI_STA_GOT_IP:
       app.sta_connected = true;
-      events.add("Wi-Fi connected, IP %s", WiFi.localIP().toString().c_str());
+      events.add("Wi-Fi connected, IP %s, ch%d %d dBm", WiFi.localIP().toString().c_str(), WiFi.channel(), WiFi.RSSI());
       break;
     case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
       if (app.sta_connected) events.add("Wi-Fi disconnected");
@@ -208,7 +214,8 @@ static void wifi_task() {
   if (now - last_sta_retry_ms > 60000) {
     last_sta_retry_ms = now;
     WiFi.disconnect();
-    WiFi.begin(settings.wifi_ssid.c_str(), settings.wifi_pass.c_str());
+    delay(100);
+    start_sta();
   }
 }
 

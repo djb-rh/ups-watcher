@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>UPS Watcher installer</title>
+<script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+<style>
+:root{--bg:#0d1117;--panel:#161b22;--border:#30363d;--text:#e6edf3;--dim:#8b949e;--accent:#2f81f7}
+@media (prefers-color-scheme:light){:root{--bg:#f6f8fa;--panel:#fff;--border:#d0d7de;--text:#1f2328;--dim:#59636e;--accent:#0969da}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.55 system-ui,-apple-system,Segoe UI,sans-serif}
+main{max-width:760px;margin:0 auto;padding:28px 16px 48px}h1{margin:0 0 4px;font-size:28px}h2{font-size:19px;margin:28px 0 8px}
+p,li{color:var(--dim)}b,strong{color:var(--text)}a{color:var(--accent)}
+.box{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:18px 20px;margin:18px 0}
+ol{padding-left:22px}li{margin:6px 0}code{background:var(--panel);border:1px solid var(--border);border-radius:5px;padding:1px 5px;color:var(--text)}
+table{border-collapse:collapse;margin:8px 0}td,th{border:1px solid var(--border);padding:4px 10px;color:var(--text);font-size:14px}th{color:var(--dim);font-weight:500}
+button.install{background:#2f81f7;color:#fff;border:0;border-radius:8px;padding:12px 22px;font:600 17px system-ui,sans-serif;cursor:pointer;margin:8px 0 4px}
+button.install:hover{filter:brightness(1.1)}
+</style></head><body><main>
+<h1>UPS Watcher</h1>
+<p>Firmware 0.1.3: a NUT (Network UPS Tools) server for APC UPSes on an <b>M5Stack Core Basic</b> with the
+<b>USB Module (MAX3421E)</b>. Plug the UPS's USB cable into the module and Home Assistant, <code>upsc</code>,
+<code>upsmon</code> or any NUT client can read it on port 3493. Source, docs and licence (MIT) on
+<a href="https://github.com/djb-rh/ups-watcher">GitHub</a>.</p>
+
+<h2>1. Install the firmware</h2>
+<div class="box">
+<ol>
+<li>Use <b>Chrome or Edge on a desktop</b> (Web Serial is needed; Safari and Firefox do not have it).</li>
+<li>Connect the Core's <b>USB-C</b> port to the computer.</li>
+<li>Click <b>Install</b> below and choose the Core's port (usually <b>USB Serial</b> or <b>CP2104</b> / <b>CH9102</b>).</li>
+</ol>
+<esp-web-install-button manifest="manifest.json">
+<button slot="activate" class="install">Install UPS Watcher 0.1.3</button>
+<span slot="unsupported"><b>This browser cannot flash devices.</b> Use Chrome or Edge on a desktop computer.</span>
+<span slot="not-allowed"><b>The page must be opened over https.</b></span>
+</esp-web-install-button>
+<p>Installing replaces whatever firmware the Core had and erases its settings. A Core that already runs UPS Watcher
+can update itself instead: <b>Update</b> on its web page, with the <code>-update.bin</code> file from the
+<a href="https://github.com/djb-rh/ups-watcher/releases/latest">latest release</a>.</p>
+</div>
+
+<h2>2. Set the USB Module's switches</h2>
+<div class="box">
+<p>The <b>USB Module v1.2</b> has two tiny DIP switches on its PCB, next to the MAX3421 chip. They ship <b>off</b>,
+which leaves the module disconnected. For the Core Basic:</p>
+<table><tr><th>Switch</th><th>Set to</th><th>Meaning</th></tr>
+<tr><td>SS Select</td><td>CH1, CH2 or CH3</td><td>G13 / G5 / G0, the firmware finds whichever you chose</td></tr>
+<tr><td>INT Select</td><td><b>CH1</b></td><td>G35 (CH2 = G34 also works if you set it in Settings)</td></tr></table>
+<p>The original USB Module without switches is wired to G5 / G35 and needs nothing.</p>
+</div>
+
+<h2>3. Set it up</h2>
+<div class="box"><ol>
+<li>The screen shows <b>AP UPS-Watcher-XXXX</b>. Join that Wi-Fi network from a phone; the setup page opens by
+itself (or browse to <b>http://192.168.4.1</b>). Pick your network and type its password.</li>
+<li>It reboots onto your network as <b>http://ups-watcher.local/</b>: live status, every NUT variable, the event
+log, settings and firmware updates.</li>
+<li>In Home Assistant add the <b>Network UPS Tools</b> integration with host <code>ups-watcher.local</code>,
+port <code>3493</code>. Or <code>upsc ups@ups-watcher.local</code>.</li>
+</ol>
+<p>Buttons: <b>A</b> previous page, <b>B</b> backlight, <b>C</b> next page. Hold <b>A + C</b> for six seconds to
+forget the Wi-Fi settings and reopen the setup hotspot.</p></div>
+</main></body></html>
